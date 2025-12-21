@@ -1,0 +1,129 @@
+import 'dart:convert';
+
+import 'package:recipe/repositories/base/model/base_entity.dart';
+import 'package:recipe/utils/string_extension.dart';
+import 'package:recipe/utils/string_extension.dart';
+import 'package:recipe/utils/string_extension.dart';
+import 'package:recipe/utils/string_extension.dart';
+import 'package:recipe/utils/string_extension.dart';
+import 'package:recipe/utils/string_extension.dart';
+import 'package:recipe/utils/string_extension.dart';
+import 'package:recipe/utils/string_extension.dart';
+import 'package:recipe/utils/string_extension.dart';
+import 'package:recipe/utils/string_extension.dart';
+import 'package:recipe/utils/string_extension.dart';
+import 'package:recipe/utils/string_extension.dart';
+import 'package:recipe/utils/string_extension.dart';
+import 'package:recipe/utils/string_extension.dart';
+import 'package:uuid/uuid.dart';
+
+UserEntity userEntityFromJson(String str) => UserEntity.fromJson(json.decode(str));
+
+String userEntityToJson(UserEntity data) => json.encode(data.toJson);
+
+class UserEntity extends BaseEntity {
+  String? name;
+  String? contact;
+  String? email;
+  String? password;
+  UserType? userType;
+  bool isContactVerified;
+  bool isEmailVerified;
+  bool isAdminApproved;
+
+  UserEntity({
+    super.id,
+    super.uuid,
+    super.active,
+    super.deleted,
+    super.createdAt,
+    super.updatedAt,
+    this.name,
+    this.contact,
+    this.email,
+    this.password,
+    this.userType = UserType.USER,
+    this.isContactVerified = false,
+    this.isEmailVerified = false,
+    this.isAdminApproved = false,
+  });
+
+  factory UserEntity.fromJson(Map<String, dynamic> json) {
+    return UserEntity(
+      id: parseInt(json['id']),
+      uuid: json['uuid'] ?? const Uuid().v8(),
+      active: parseBool(json['active'], true),
+      deleted: parseBool(json['deleted'], false),
+      createdAt: parseDateTime(json['created_at'], DateTime.now()),
+      updatedAt: parseDateTime(json['updated_at'], DateTime.now()),
+      userType: (json['user_type']?.toString() ?? '').userTypeFromString ?? UserType.USER,
+      name: json['name'],
+      contact: json['contact'],
+      email: json['email'],
+      password: json['password'],
+      isContactVerified: parseBool(json['is_contact_verified']),
+      isEmailVerified: parseBool(json['is_email_verified']),
+      isAdminApproved: parseBool(json['is_admin_approved']),
+    );
+  }
+
+  Map<String, dynamic> _toMap({required bool forTable}) {
+    return {
+      'id': id,
+      'uuid': uuid,
+      'active': active,
+      if (forTable) 'deleted': deleted,
+      'created_at': createdAt.toIso8601String(),
+      'updated_at': updatedAt.toIso8601String(),
+      'user_type': userType?.name,
+      'name': name,
+      'contact': contact,
+      'email': email,
+      if (forTable) 'password': password,
+      'is_contact_verified': isContactVerified,
+      'is_email_verified': isEmailVerified,
+      'is_admin_approved': isAdminApproved,
+    };
+  }
+
+  Map<String, dynamic> get toTableJson => {
+    'id': id,
+    'uuid': uuid,
+    'active': active,
+    'deleted': deleted,
+    'created_at': createdAt.toIso8601String(),
+    'updated_at': updatedAt.toIso8601String(),
+    'user_type': userType?.name,
+    'name': name,
+    'contact': contact,
+    'email': email,
+    'password': password,
+    'is_contact_verified': isContactVerified,
+    'is_email_verified': isEmailVerified,
+    'is_admin_approved': isAdminApproved,
+  };
+
+  Map<String, dynamic> get toJson => {
+    'id'.snakeToCamel: id,
+    'uuid'.snakeToCamel: uuid,
+    'active'.snakeToCamel: active,
+    'created_at'.snakeToCamel: createdAt.toIso8601String(),
+    'updated_at'.snakeToCamel: updatedAt.toIso8601String(),
+    'user_type'.snakeToCamel: userType?.name,
+    'name'.snakeToCamel: name,
+    'contact'.snakeToCamel: contact,
+    'email'.snakeToCamel: email,
+    'is_contact_verified'.snakeToCamel: isContactVerified,
+    'is_email_verified'.snakeToCamel: isEmailVerified,
+    'is_admin_approved'.snakeToCamel: isAdminApproved,
+  };
+}
+
+enum UserType { SUPER_ADMIN, ADMIN, VENDOR, USER }
+
+extension UserTypeExtension on String {
+  UserType? get userTypeFromString {
+    final normalized = trim().toUpperCase();
+    return UserType.values.firstWhere((element) => element.name.toUpperCase() == normalized, orElse: () => UserType.USER);
+  }
+}

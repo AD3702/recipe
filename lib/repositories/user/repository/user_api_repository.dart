@@ -1,0 +1,79 @@
+import 'dart:convert';
+
+import 'package:recipe/controller/user_controller.dart';
+import 'package:recipe/repositories/base/repository/base_repository.dart';
+import 'package:recipe/repositories/user/contract/user_repository.dart';
+import 'package:recipe/utils/string_extension.dart';
+import 'package:shelf/shelf.dart';
+
+class UserApiRepository implements UserRepository {
+  UserController userController = UserController.user;
+
+  @override
+  Future<Response> userRootHandler(Request req) async {
+    Response response = Response(400);
+    String requestPath = req.requestedUri.path;
+    var param = req.url.hasQuery ? req.url.query : null;
+    Map<String, dynamic> queryParam = {};
+    if (param != null) {
+      param.split('&').forEach((element) {
+        queryParam[element.split('=').first] = element.split('=').last;
+      });
+    }
+    response = BaseRepository.baseRepository.baseRootHandler(req);
+    if (response.statusCode != 200) {
+      final mergedHeaders = {...response.headers, 'Content-Type': 'application/json'};
+      response = response.change(headers: mergedHeaders);
+      return response;
+    }
+    try {
+      switch (requestPath) {
+        case BaseRepository.user:
+          if (req.method == RequestType.GET.name || req.method == RequestType.PUT.name) {
+            String? uuid = queryParam['uuid'];
+            if (uuid == null) {
+              Map<String, dynamic> res = {'status': 400, 'message': 'UUID is missing from request param'};
+              response = Response.badRequest(body: jsonEncode(res));
+            } else {
+              response = await userController.getUserFromUuidResponse(uuid);
+            }
+          } else {
+            response = await userController.addUser((await req.readAsString()).convertJsonCamelToSnake);
+          }
+          break;
+        case BaseRepository.userDelete:
+          String? uuid = queryParam['uuid'];
+          if (uuid == null) {
+            Map<String, dynamic> res = {'status': 400, 'message': 'UUID is missing from request param'};
+            response = Response.badRequest(body: jsonEncode(res));
+          } else {
+            response = await userController.deleteUserFromUuidResponse(uuid);
+          }
+          break;
+        case BaseRepository.userStatus:
+          String? uuid = queryParam['uuid'];
+          bool? active = bool.tryParse(queryParam['active']);
+          if (uuid == null || active == null) {
+            Map<String, dynamic> res = {'status': 400, 'message': 'UUID or Status is missing from request param'};
+            response = Response.badRequest(body: jsonEncode(res));
+          } else {
+            response = await userController.deactivateUserFromUuidResponse(uuid, active);
+          }
+          break;
+        case BaseRepository.userList:
+          String requestBody = (await req.readAsString()).convertJsonCamelToSnake;
+          response = await userController.getUserListResponse(jsonDecode(requestBody));
+          break;
+        default:
+          response = Response(404);
+          break;
+      }
+    } catch (e) {
+      print(e);
+      response = Response.badRequest();
+    }
+    final mergedHeaders = {...response.headers, 'Content-Type': 'application/json'};
+    response = response.change(headers: mergedHeaders);
+    return response;
+  }
+}
