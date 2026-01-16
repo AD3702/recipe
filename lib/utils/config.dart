@@ -2,17 +2,11 @@ import 'dart:io';
 
 class AppConfig {
   static final baseUrl = Platform.environment['BASE_URL'] ?? 'http://localhost:8085';
-
   static final dbHost = Platform.environment['DB_HOST'] ?? 'localhost';
-
   static final dbPort = int.parse(Platform.environment['DB_PORT'] ?? '5432');
-
-  static final dbName = Platform.environment['DB_NAME'] ?? '';
-
-  static final dbUser = Platform.environment['DB_USER'] ?? '';
-
-  static final dbPassword = Platform.environment['DB_PASSWORD'] ?? '';
-
+  static final dbName = Platform.environment['DB_NAME'] ?? 'rajasthanlimesuppliersdb';
+  static final dbUser = Platform.environment['DB_USER'] ?? 'rajasthanlimesuppliers';
+  static final dbPassword = Platform.environment['DB_PASSWORD'] ?? 'Rajasthan@Suppliers2002';
   static final serverPort = int.parse(Platform.environment['SERVER_PORT'] ?? '8085');
   static const String superAdminName = 'Rajasthan Lime Suppliers';
   static const String superAdminEmail = 'info@rajasthanlimesuppliers.com';

@@ -31,8 +31,8 @@ class CategoryController {
     final suffix = conditionData['suffix'] as String;
     final params = conditionData['params'] as List<dynamic>;
     final suffixParams = conditionData['suffixParams'] as List<dynamic>;
-    final query = 'SELECT ${keys.join(',')} FROM ${AppConfig.categoryDetails} WHERE ${conditions.join(' AND ')} $suffix';
     final countQuery = 'SELECT COUNT(*) FROM ${AppConfig.categoryDetails} WHERE ${conditions.join(' AND ')}';
+    final query = 'SELECT ${keys.join(',')} FROM ${AppConfig.categoryDetails} WHERE ${conditions.join(' AND ')} $suffix';
     final res = await connection.execute(Sql.named(query), parameters: params + suffixParams);
     final countRes = await connection.execute(Sql.named(countQuery), parameters: params);
     int totalCount = countRes.first.first as int;
@@ -411,7 +411,14 @@ class CategoryController {
     ];
 
     // Fetch existing category names
-    final existingEntityList = (await getCategoryList({})).$1.map((e) => (e.name ?? '').trim()).where((e) => e.isNotEmpty).toList();
+    List<String> existingEntityList = [];
+    var query = 'SELECT ${keys.join(',')} FROM ${AppConfig.categoryDetails}';
+    var res = await connection.execute(Sql.named(query));
+    var resList = DBFunctions.mapFromResultRow(res, keys) as List;
+
+    for (var category in resList) {
+      existingEntityList.add(category['name']);
+    }
 
     // Create entities and remove existing
     final List<CategoryEntity> categoryList = categories.map((name) => CategoryEntity(name: name)).where((e) => !existingEntityList.contains((e.name ?? '').trim())).toList();
@@ -420,11 +427,11 @@ class CategoryController {
 
     final insertQuery = DBFunctions.generateInsertListQueryFromClass(AppConfig.categoryDetails, categoryList.map((e) => e.toTableJson).toList());
 
-    final query = insertQuery['query'] as String;
+    query = insertQuery['query'] as String;
     final params = insertQuery['params'] as List<dynamic>;
 
-    final res = await connection.execute(Sql.named(query), parameters: params);
-    final resList = DBFunctions.mapFromResultRow(res, keys) as List;
+    res = await connection.execute(Sql.named(query), parameters: params);
+    resList = DBFunctions.mapFromResultRow(res, keys) as List;
     if (resList.isNotEmpty) {
       return CategoryEntity.fromJson(resList.first);
     }
