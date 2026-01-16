@@ -11,6 +11,7 @@ class PaginationEntity {
   bool hasPreviousPage = false;
 
   PaginationEntity({required this.totalCount, required this.pageSize, required this.pageNumber}) {
+    if (pageSize == 0) pageSize = 1;
     hasNextPage = ((pageNumber) * (pageSize)) < totalCount;
     hasPreviousPage = (pageNumber) > 1;
     totalPages = (totalCount / pageSize).ceil();
