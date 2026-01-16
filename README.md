@@ -47,3 +47,15 @@ You should see the logging printed in the first terminal:
 2021-05-06T15:47:04.620417  0:00:00.000158 GET     [200] /
 2021-05-06T15:47:08.392928  0:00:00.001216 GET     [200] /echo/I_love_Dart
 ```
+
+brew --version
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+brew install postgresql@16
+brew link postgresql@16 --force
+brew services start postgresql@16
+psql postgres
+CREATE USER rajasthanlimesuppliers WITH PASSWORD 'Rajasthan@Suppliers2002';
+ALTER USER rajasthanlimesuppliers CREATEDB;
+\q
+createdb -U rajasthanlimesuppliers rajasthanlimesuppliersdb
+psql -U rajasthanlimesuppliers -d rajasthanlimesuppliersdb

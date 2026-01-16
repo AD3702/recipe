@@ -90,7 +90,7 @@ class AuthController {
     response['status'] = 200;
     response['message'] = 'Login successful.';
     response['data'] = userEntity?.toJson;
-    response['data']['token'] = BaseRepository.baseRepository.generateJwtToken(userEntity?.email ?? '', userEntity?.userType ?? UserType.USER);
+    response['data']['token'] = BaseRepository.baseRepository.generateJwtToken(userEntity?.email ?? '', userEntity?.userType ?? UserType.USER, userEntity?.uuid ?? '');
     return Response(200, body: jsonEncode(response));
   }
 
@@ -102,11 +102,10 @@ class AuthController {
     Map<String, dynamic> response = {'status': 400};
     var payloadJson = BaseRepository.baseRepository.verifyToken(token);
     if (payloadJson != null) {
-      print(jsonDecode(payloadJson));
       String userName = jsonDecode(payloadJson)['userName'];
       String userType = jsonDecode(payloadJson)['userType'];
-      userEntity = await getUserFromEmailAndUserType(userName.decryptBasic, userType.decryptBasic);
-      response['data'] = BaseRepository.baseRepository.generateJwtToken(userEntity?.email ?? '', userEntity?.userType ?? UserType.USER);
+      userEntity = await getUserFromEmailAndUserType(userName, userType);
+      response['data'] = BaseRepository.baseRepository.generateJwtToken(userEntity?.email ?? '', userEntity?.userType ?? UserType.USER, userEntity?.uuid ?? '');
       response['status'] = 200;
       return Response(200, body: jsonEncode(response));
     }

@@ -10,7 +10,7 @@ class NeedLogin {
   /// Validate access from decoded JWT payload.
   bool hasAccess(Map<String, dynamic> payload) {
     if (!adminOnly) return true;
-    final userType = payload['userType']?.toString().decryptBasic.userTypeFromString;
+    final userType = payload['userType']?.toString().userTypeFromString;
     return userType == UserType.ADMIN || userType == UserType.SUPER_ADMIN;
   }
 }

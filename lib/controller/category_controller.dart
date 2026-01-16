@@ -25,12 +25,7 @@ class CategoryController {
   Future<(List<CategoryEntity>, PaginationEntity)> getCategoryList(Map<String, dynamic> requestBody) async {
     int? pageSize = int.tryParse(requestBody['page_size'].toString());
     int? pageNumber = int.tryParse(requestBody['page_number'].toString());
-    final conditionData = DBFunctions.buildConditions(
-      requestBody,
-      searchKeys: ['name'],
-      limit: pageSize,
-      offset: (pageNumber != null && pageSize != null) ? (pageNumber - 1) * pageSize : null,
-    );
+    final conditionData = DBFunctions.buildConditions(requestBody, searchKeys: ['name'], limit: pageSize, offset: (pageNumber != null && pageSize != null) ? (pageNumber - 1) * pageSize : null);
 
     final conditions = conditionData['conditions'] as List<String>;
     final suffix = conditionData['suffix'] as String;
@@ -86,6 +81,28 @@ class CategoryController {
       return CategoryEntity.fromJson(resList.first);
     }
     return null;
+  }
+
+  Future<List<String>> getCategoryNameListFromUuidList(List<String> uuidList) async {
+    if (uuidList.isEmpty) return [];
+
+    // Build conditions for uuid IN (...)
+    final conditionData = DBFunctions.buildConditions({'uuid': uuidList});
+    final conditions = conditionData['conditions'] as List<String>;
+    final params = conditionData['params'] as List<dynamic>;
+
+    final query =
+        'SELECT name FROM ${AppConfig.categoryDetails} '
+        'WHERE ${conditions.join(' AND ')}';
+
+    final res = await connection.execute(Sql.named(query), parameters: params);
+    final resList = DBFunctions.mapFromResultRow(res, ['name']) as List;
+
+    final List<String> categoryList = [];
+    for (final row in resList) {
+      categoryList.add(row['name']);
+    }
+    return categoryList;
   }
 
   Future<CategoryEntity?> getCategoryFromName(String name) async {
@@ -148,7 +165,6 @@ class CategoryController {
   ///
   ///
   Future<Response> deleteCategoryFromUuidResponse(String uuid) async {
-    print(uuid);
     var categoryResponse = await getCategoryFromUuid(uuid);
     if (categoryResponse == null) {
       Map<String, dynamic> response = {'status': 404, 'message': 'Category not found with uuid $uuid'};
@@ -174,7 +190,6 @@ class CategoryController {
   ///
   ///
   Future<Response> deactivateCategoryFromUuidResponse(String uuid, bool active) async {
-    print(uuid);
     var categoryResponse = await getCategoryFromUuid(uuid);
     if (categoryResponse == null) {
       Map<String, dynamic> response = {'status': 404, 'message': 'Category not found with uuid $uuid'};
@@ -197,5 +212,222 @@ class CategoryController {
     final query = 'UPDATE ${AppConfig.categoryDetails} SET active = $active WHERE ${conditions.join(' AND ')}';
     final res = await connection.execute(Sql.named(query), parameters: params);
     return DBFunctions.mapFromResultRow(res, keys);
+  }
+
+  ///CREATE CATEGORY LIST (seed)
+  ///
+  /// Inserts a default set of common recipe categories if they don't already exist.
+  /// Returns the first inserted CategoryEntity (or null if nothing inserted).
+  Future<CategoryEntity?> insertNewCategoryList() async {
+    // Common recipe categories (broad + practical)
+    final List<String> categories = [
+      'Appetizers',
+      'Breakfast',
+      'Brunch',
+      'Lunch',
+      'Dinner',
+      'Snacks',
+      'Side Dishes',
+      'Soups',
+      'Salads',
+      'Sandwiches & Wraps',
+      'Pasta',
+      'Rice & Grains',
+      'Noodles',
+      'Pizza',
+      'Burgers',
+      'Tacos & Burritos',
+      'Curries',
+      'Stir-Fries',
+      'Casseroles',
+      'BBQ & Grilling',
+      'Seafood',
+      'Chicken',
+      'Mutton & Lamb',
+      'Beef',
+      'Pork',
+      'Vegetarian',
+      'Vegan',
+      'Gluten-Free',
+      'Keto',
+      'Low Carb',
+      'High Protein',
+      'Healthy',
+      'Comfort Food',
+      'Quick & Easy',
+      'One Pot Meals',
+      'Meal Prep',
+      'Kids Friendly',
+      'Party Food',
+      'Baking',
+      'Breads',
+      'Cakes',
+      'Cookies',
+      'Desserts',
+      'Ice Cream & Frozen Desserts',
+      'Chocolate',
+      'Puddings & Custards',
+      'Indian',
+      'Gujarati',
+      'Punjabi',
+      'South Indian',
+      'Chinese',
+      'Italian',
+      'Mexican',
+      'Thai',
+      'Japanese',
+      'Korean',
+      'Mediterranean',
+      'Middle Eastern',
+      'American',
+      'European',
+      'African',
+      'Beverages',
+      'Smoothies',
+      'Juices',
+      'Coffee & Tea',
+      'Mocktails',
+      'Sauces & Dips',
+      'Chutneys',
+      'Pickles',
+      'Marinades',
+      'Dry Rubs',
+      'Seasonings',
+      'Herbs & Spices',
+      'Fermented Foods',
+      'Probiotic Foods',
+      'Street Food',
+      'Fast Food',
+      'Street Snacks',
+      'Chaat',
+      'Rolls & Frankies',
+      'Samosas & Kachori',
+      'Dosas & Idli',
+      'Paratha & Roti',
+      'Curries & Gravies',
+      'Dal & Lentils',
+      'Paneer Dishes',
+      'Tofu Dishes',
+      'Mushroom Dishes',
+      'Egg Dishes',
+      'Breakfast Bowls',
+      'Smoothie Bowls',
+      'Granola & Oats',
+      'Salads & Bowls',
+      'Wraps & Rolls',
+      'Flatbreads',
+      'Rice Bowls',
+      'Fried Rice',
+      'Biryani',
+      'Pulao',
+      'Khichdi',
+      'Risotto',
+      'Paella',
+      'Ramen',
+      'Pho',
+      'Udon',
+      'Sushi',
+      'Dim Sum',
+      'Dumplings',
+      'Spring Rolls',
+      'Wok Recipes',
+      'Grilled Dishes',
+      'Roasted Dishes',
+      'Steamed Dishes',
+      'Slow Cooker',
+      'Air Fryer',
+      'Instant Pot',
+      'No-Cook',
+      'Raw Foods',
+      'Detox',
+      'Weight Loss',
+      'Muscle Gain',
+      'Diabetic Friendly',
+      'Low Sodium',
+      'Heart Healthy',
+      'Festival Special',
+      'Navratri Special',
+      'Diwali Special',
+      'Christmas Special',
+      'Ramadan Special',
+      'Eid Special',
+      'Vegan Desserts',
+      'Sugar-Free Desserts',
+      'Gluten-Free Desserts',
+      'Ice Lollies',
+      'Milkshakes',
+      'Falooda',
+      'Indian Sweets',
+      'Halwa',
+      'Barfi',
+      'Ladoo',
+      'Rasgulla',
+      'Gulab Jamun',
+      'Kheer',
+      'Shrikhand',
+      'Yogurt & Curd',
+      'Cheese Dishes',
+      'Butter & Ghee',
+      'Oils & Fats',
+      'Vinegar & Dressings',
+      'Mayonnaise',
+      'Ketchup',
+      'Mustard',
+      'Hot Sauce',
+      'Salsa',
+      'Relish',
+      'Purees',
+      'Stocks & Broths',
+      'Baby Food',
+      'Toddler Meals',
+      'Senior Friendly',
+      'Picnic Food',
+      'Travel Food',
+      'Tiffin Recipes',
+      'Office Lunch',
+      'Budget Meals',
+      'Luxury Dishes',
+      'Chef Specials',
+      'Fusion Cuisine',
+      'Experimental Recipes',
+      'Traditional Recipes',
+      'Home Style',
+      'Restaurant Style',
+      'Cloud Kitchen',
+      'Catering Recipes',
+      'Bulk Cooking',
+      'Wedding Specials',
+      'Birthday Specials',
+      'Anniversary Specials',
+      'Bridal Shower',
+      'Baby Shower',
+      'Potluck',
+      'Buffet Style',
+      'Plated Dishes',
+      'Tasting Menu',
+      'Fine Dining',
+      'Spice Mixes',
+      'Basics',
+    ];
+
+    // Fetch existing category names
+    final existingEntityList = (await getCategoryList({})).$1.map((e) => (e.name ?? '').trim()).where((e) => e.isNotEmpty).toList();
+
+    // Create entities and remove existing
+    final List<CategoryEntity> categoryList = categories.map((name) => CategoryEntity(name: name)).where((e) => !existingEntityList.contains((e.name ?? '').trim())).toList();
+
+    if (categoryList.isEmpty) return null;
+
+    final insertQuery = DBFunctions.generateInsertListQueryFromClass(AppConfig.categoryDetails, categoryList.map((e) => e.toTableJson).toList());
+
+    final query = insertQuery['query'] as String;
+    final params = insertQuery['params'] as List<dynamic>;
+
+    final res = await connection.execute(Sql.named(query), parameters: params);
+    final resList = DBFunctions.mapFromResultRow(res, keys) as List;
+    if (resList.isNotEmpty) {
+      return CategoryEntity.fromJson(resList.first);
+    }
+    return null;
   }
 }

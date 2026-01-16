@@ -27,19 +27,60 @@ class RecipeApiRepository implements RecipeRepository {
       response = response.change(headers: {...response.headers, 'Content-Type': 'application/json'});
       return response;
     }
+    Map<String, dynamic> tokenMap = jsonDecode(await response.readAsString());
+    String? userUuid = tokenMap['uuid'];
     try {
       switch (requestPath) {
         case BaseRepository.recipe:
-          if (req.method == RequestType.GET.name || req.method == RequestType.PUT.name) {
+          if (req.method == RequestType.GET.name) {
             String? uuid = queryParam['uuid'];
             if (uuid == null) {
               Map<String, dynamic> res = {'status': 400, 'message': 'UUID is missing from request param'};
               response = Response.badRequest(body: jsonEncode(res));
             } else {
-              response = await recipeController.getRecipeFromUuidResponse(uuid);
+              response = await recipeController.getRecipeFromUuidResponse(uuid, userUuid);
             }
+          } else if (req.method == RequestType.PUT.name) {
+            response = await recipeController.updateRecipe((await req.readAsString()).convertJsonCamelToSnake, userUuid);
           } else {
-            response = await recipeController.addRecipe((await req.readAsString()).convertJsonCamelToSnake);
+            response = await recipeController.addRecipe((await req.readAsString()).convertJsonCamelToSnake, userUuid);
+          }
+          break;
+        case BaseRepository.toggleRecipeWishlist:
+          if (req.method == RequestType.PUT.name) {
+            response = await recipeController.toggleRecipeWishlist((await req.readAsString()).convertJsonCamelToSnake, userUuid ?? '');
+          }
+          break;
+        case BaseRepository.dashboard:
+          if (req.method == RequestType.GET.name) {
+            response = await recipeController.getDashboardDataForUser(userUuid ?? '');
+          }
+          break;
+        case BaseRepository.toggleRecipeBookmark:
+          if (req.method == RequestType.PUT.name) {
+            response = await recipeController.toggleRecipeBookmark((await req.readAsString()).convertJsonCamelToSnake, userUuid ?? '');
+          }
+          break;
+        case BaseRepository.recipeView:
+          if (req.method == RequestType.PUT.name) {
+            response = await recipeController.updateRecipeViewList((await req.readAsString()).convertJsonCamelToSnake);
+          } else if (req.method == RequestType.GET.name) {
+            String? recipeUuid = queryParam['recipeUuid'];
+            if (recipeUuid == null) {
+              Map<String, dynamic> res = {'status': 400, 'message': 'UUID is missing from request param'};
+              response = Response.badRequest(body: jsonEncode(res));
+            } else {
+              response = await recipeController.getRecipeViewCountList(userUuid ?? '', recipeUuid!);
+            }
+          }
+          break;
+        case BaseRepository.recipeImage:
+          String? uuid = queryParam['uuid'];
+          if (uuid == null) {
+            Map<String, dynamic> res = {'status': 400, 'message': 'UUID is missing from request param'};
+            response = Response.badRequest(body: jsonEncode(res));
+          } else {
+            response = await recipeController.uploadRecipeImagesResponse(req, uuid);
           }
           break;
         case BaseRepository.recipeDelete:
@@ -67,19 +108,20 @@ class RecipeApiRepository implements RecipeRepository {
           break;
         case BaseRepository.recipeList:
           String requestBody = (await req.readAsString()).convertJsonCamelToSnake;
-          response = await recipeController.getRecipeListResponse(jsonDecode(requestBody));
+          response = await recipeController.getRecipeListResponse(jsonDecode(requestBody), userUuid);
           break;
         default:
           response = Response(404, body: jsonEncode({'message': 'Not found'}));
           break;
       }
-    } catch (e) {
+    } catch (e, st) {
       print(e);
+      print(st);
       response = Response.badRequest();
     }
     final mergedHeaders = {...response.headers, 'Content-Type': 'application/json'};
     response = response.change(headers: mergedHeaders);
-    print(response.headers);
+
     return response;
   }
 }

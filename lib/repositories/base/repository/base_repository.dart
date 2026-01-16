@@ -17,16 +17,23 @@ class BaseRepository {
 
   static final Map<String, Map<RequestType, List<Object>>> routeAnnotations = {
     login: {RequestType.POST: []},
+    register: {RequestType.POST: []},
     generateOtp: {RequestType.POST: []},
     verifyOtp: {RequestType.POST: []},
     forgotPassword: {RequestType.POST: []},
     resetPassword: {RequestType.POST: []},
+    profile: {
+      RequestType.GET: const <Object>[NeedLogin()],
+    },
     updateToken: {
       RequestType.GET: const <Object>[NeedLogin(adminOnly: true)],
     },
     user: {
       RequestType.GET: const <Object>[NeedLogin(adminOnly: true)],
       RequestType.POST: const <Object>[NeedLogin(adminOnly: true)],
+    },
+    userDocuments: {
+      RequestType.PUT: const <Object>[NeedLogin()],
     },
     userDelete: {
       RequestType.DELETE: const <Object>[NeedLogin(adminOnly: true)],
@@ -47,9 +54,7 @@ class BaseRepository {
     categoryStatus: {
       RequestType.PUT: const <Object>[NeedLogin(adminOnly: true)],
     },
-    categoryList: {
-      RequestType.POST: const <Object>[NeedLogin(adminOnly: true)],
-    },
+    categoryList: {RequestType.POST: []},
     attribute: {
       RequestType.GET: const <Object>[NeedLogin(adminOnly: true)],
       RequestType.POST: const <Object>[NeedLogin(adminOnly: true)],
@@ -64,17 +69,34 @@ class BaseRepository {
       RequestType.POST: const <Object>[NeedLogin(adminOnly: true)],
     },
     recipe: {
-      RequestType.GET: const <Object>[NeedLogin(adminOnly: true)],
-      RequestType.POST: const <Object>[NeedLogin(adminOnly: true)],
+      RequestType.GET: const <Object>[],
+      RequestType.POST: const <Object>[NeedLogin()],
+      RequestType.PUT: const <Object>[NeedLogin()],
+    },
+    recipeImage: {
+      RequestType.PUT: const <Object>[NeedLogin()],
+    },
+    dashboard: {
+      RequestType.GET: const <Object>[NeedLogin()],
+    },
+    toggleRecipeWishlist: {
+      RequestType.PUT: const <Object>[NeedLogin()],
+      RequestType.GET: const <Object>[NeedLogin()],
+    },
+    toggleRecipeBookmark: {
+      RequestType.PUT: const <Object>[NeedLogin()],
+      RequestType.GET: const <Object>[NeedLogin()],
     },
     recipeDelete: {
-      RequestType.DELETE: const <Object>[NeedLogin(adminOnly: true)],
+      RequestType.DELETE: const <Object>[NeedLogin()],
     },
     recipeStatus: {
-      RequestType.PUT: const <Object>[NeedLogin(adminOnly: true)],
+      RequestType.PUT: const <Object>[NeedLogin()],
     },
-    recipeList: {
-      RequestType.POST: const <Object>[NeedLogin(adminOnly: true)],
+    recipeList: {RequestType.POST: []},
+    recipeView: {
+      RequestType.PUT: [],
+      RequestType.GET: <Object>[NeedLogin()],
     },
   };
 
@@ -103,29 +125,35 @@ class BaseRepository {
     }
 
     String? payloadJson;
+    Map<String, dynamic> payloadMap = {};
 
-    if (needLogin != null) {
-      final authHeader = req.headers['Authorization'];
-      if (authHeader == null) {
-        return Response.unauthorized(jsonEncode({'status': 401, 'message': 'Authorization token is missing'}));
-      }
-
-      payloadJson = BaseRepository.baseRepository.verifyToken(authHeader);
-      if (payloadJson == null) {
-        return Response.unauthorized(jsonEncode({'status': 401, 'message': 'Unauthorized'}));
-      }
-
-      final payloadMap = jsonDecode(payloadJson) as Map<String, dynamic>;
-      if (!needLogin.hasAccess(payloadMap)) {
-        return Response.forbidden(jsonEncode({'status': 403, 'message': 'Admin access required'}));
-      }
+    final authHeader = req.headers['Authorization'];
+    if (authHeader == null && needLogin != null) {
+      return Response.unauthorized(jsonEncode({'status': 401, 'message': 'Authorization token is missing'}));
     }
 
-    return Response(200, body: payloadJson ?? '');
+    payloadJson = BaseRepository.baseRepository.verifyToken(authHeader ?? '''{}''');
+
+    if (payloadJson == null && needLogin != null) {
+      return Response.unauthorized(jsonEncode({'status': 401, 'message': 'Unauthorized'}));
+    }
+
+    payloadMap = (jsonDecode(payloadJson ?? '''{}''') as Map<String, dynamic>).map((key, value) {
+      if (key == 'userName' || key == 'userType' || key == 'iss') {
+        return MapEntry(key, (value as String).decryptBasic);
+      }
+      return MapEntry(key, value);
+    });
+
+    if (!(needLogin?.hasAccess(payloadMap) ?? true)) {
+      return Response.forbidden(jsonEncode({'status': 403, 'message': 'Admin access required'}));
+    }
+
+    return Response(200, body: jsonEncode(payloadMap));
   }
 
-  String generateJwtToken(String userName, UserType userType) {
-    final jwt = JWT({'userName': userName.encryptBasic, 'userType': userType.name.encryptBasic}, issuer: AppConfig.appName.encryptBasic);
+  String generateJwtToken(String userName, UserType userType, String uuid) {
+    final jwt = JWT({'userName': userName.encryptBasic, 'userType': userType.name.encryptBasic, 'uuid': uuid}, issuer: AppConfig.appName.encryptBasic);
     final token = jwt.sign(SecretKey(AppConfig.secretKey), expiresIn: Duration(days: 1));
     return token;
   }
@@ -135,7 +163,6 @@ class BaseRepository {
       final jwt = JWT.verify(token, SecretKey(AppConfig.secretKey), checkExpiresIn: true);
       return jsonEncode(jwt.payload);
     } catch (ex) {
-      print('Error: $ex');
       return null;
     }
   }
@@ -147,7 +174,11 @@ class BaseRepository {
   static const String verifyOtp = '/auth/verify/otp';
   static const String forgotPassword = '/auth/forgot/password';
   static const String resetPassword = '/auth/reset/password';
+  static const String register = '/auth/register';
   static const String user = '/user';
+  static const String profile = '/user/profile';
+  static const String userDocuments = '/user/documents';
+  static const String userProfileImage = '/user/profile/image';
   static const String userDelete = '/user/delete';
   static const String userList = '/user/list';
   static const String userStatus = '/user/status';
@@ -160,9 +191,30 @@ class BaseRepository {
   static const String attributeList = '/attribute/list';
   static const String attributeStatus = '/attribute/status';
   static const String recipe = '/recipe';
+  static const String toggleRecipeWishlist = '/recipe/like';
+  static const String toggleRecipeBookmark = '/recipe/bookmark';
   static const String recipeDelete = '/recipe/delete';
+  static const String recipeImage = '/recipe/image';
   static const String recipeList = '/recipe/list';
   static const String recipeStatus = '/recipe/status';
+  static const String dashboard = '/recipe/dashboard';
+  static const String recipeView = '/recipe/view';
+
+  static String buildFileUrl(String? filePath) {
+    if (filePath == null || filePath.isEmpty) return '';
+
+    // Ensure forward slashes for Windows/macOS/Linux
+    final normalized = filePath.replaceAll('\\', '/');
+
+    // Remove any leading slashes
+    final cleanPath = normalized.startsWith('/') ? normalized.substring(1) : normalized;
+
+    // Example:
+    // AppConfig.baseUrl = "https://api.yourdomain.com"
+    // returns:
+    // https://api.yourdomain.com/uploads/cook_verification/xxx.jpg
+    return '${AppConfig.baseUrl}/$cleanPath';
+  }
 
   // Helper
   RequestType _toRequestType(String method) {

@@ -172,10 +172,8 @@ class AttributeController {
     List<AttributeEntity> attributeList = List.generate(attributes.length, (index) => AttributeEntity(name: attributes[index], label: attributesLabel[index]));
     List<String?> existingEntityList = (await getAttributeList({})).$1.map((e) => e.name).toList();
     attributeList.removeWhere((element) => existingEntityList.toList().contains(element.name));
-    print(attributeList);
     if (attributeList.isNotEmpty) {
       var insertQuery = DBFunctions.generateInsertListQueryFromClass(AppConfig.attributeDetails, attributeList.map((e) => e.toTableJson).toList());
-      print(insertQuery);
       final query = insertQuery['query'] as String;
       final params = insertQuery['params'] as List<dynamic>;
       final res = await connection.execute(Sql.named(query), parameters: params);
@@ -192,7 +190,6 @@ class AttributeController {
   ///
   ///
   Future<Response> deleteAttributeFromUuidResponse(String uuid) async {
-    print(uuid);
     var attributeResponse = await getAttributeFromUuid(uuid);
     if (attributeResponse == null) {
       Map<String, dynamic> response = {'status': 404, 'message': 'Attribute not found with uuid $uuid'};
@@ -218,7 +215,6 @@ class AttributeController {
   ///
   ///
   Future<Response> deactivateAttributeFromUuidResponse(String uuid, bool active) async {
-    print(uuid);
     var attributeResponse = await getAttributeFromUuid(uuid);
     if (attributeResponse == null) {
       Map<String, dynamic> response = {'status': 404, 'message': 'Attribute not found with uuid $uuid'};

@@ -41,6 +41,29 @@ class UserApiRepository implements UserRepository {
             response = await userController.addUser((await req.readAsString()).convertJsonCamelToSnake);
           }
           break;
+        case BaseRepository.profile:
+          response = await userController.getUserProfile(jsonDecode((await response.readAsString()))['userName']);
+          break;
+        case BaseRepository.userDocuments:
+          String? uuid = queryParam['uuid'];
+          if (uuid == null) {
+            Map<String, dynamic> res = {'status': 400, 'message': 'UUID is missing from request param'};
+            response = Response.badRequest(body: jsonEncode(res));
+          } else {
+            response = await userController.uploadCookVerificationDocumentFormData(req, uuid);
+            print(response.statusCode);
+            print(response.headers);
+          }
+          break;
+        case BaseRepository.userProfileImage:
+          String? uuid = queryParam['uuid'];
+          if (uuid == null) {
+            Map<String, dynamic> res = {'status': 400, 'message': 'UUID is missing from request param'};
+            response = Response.badRequest(body: jsonEncode(res));
+          } else {
+            response = await userController.uploadUserProfileImage(req, uuid);
+          }
+          break;
         case BaseRepository.userDelete:
           String? uuid = queryParam['uuid'];
           if (uuid == null) {
@@ -68,8 +91,8 @@ class UserApiRepository implements UserRepository {
           response = Response(404);
           break;
       }
-    } catch (e) {
-      print(e);
+    } catch (e, st) {
+      print(st);
       response = Response.badRequest();
     }
     final mergedHeaders = {...response.headers, 'Content-Type': 'application/json'};

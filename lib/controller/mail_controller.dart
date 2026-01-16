@@ -18,11 +18,8 @@ class MailController {
       ..html = body;
 
     try {
-      print('Email sending to $toEmail');
       await send(message, smtpServer);
-      print('Email sent to $toEmail');
     } on MailerException catch (e) {
-      print('Email failed: $e');
     }
   }
 
@@ -40,11 +37,8 @@ class MailController {
       ..html = htmlContent;
 
     try {
-      print('Email sending to $toEmail');
       await send(message, smtpServer);
-      print('Email sent to $toEmail');
     } on MailerException catch (e) {
-      print('Email failed: $e');
     }
   }
 }

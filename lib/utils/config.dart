@@ -1,10 +1,19 @@
+import 'dart:io';
+
 class AppConfig {
-  static const String dbHost = 'localhost';
-  static const int dbPort = 5432;
-  static const String dbName = 'recipe_db';
-  static const String dbUser = 'amaandhanerawala';
-  static const String dbPassword = 'Ad@4307@3702@@';
-  static const int serverPort = 8085;
+  static final baseUrl = Platform.environment['BASE_URL'] ?? 'http://localhost:8085';
+
+  static final dbHost = Platform.environment['DB_HOST'] ?? 'localhost';
+
+  static final dbPort = int.parse(Platform.environment['DB_PORT'] ?? '5432');
+
+  static final dbName = Platform.environment['DB_NAME'] ?? '';
+
+  static final dbUser = Platform.environment['DB_USER'] ?? '';
+
+  static final dbPassword = Platform.environment['DB_PASSWORD'] ?? '';
+
+  static final serverPort = int.parse(Platform.environment['SERVER_PORT'] ?? '8085');
   static const String superAdminName = 'Rajasthan Lime Suppliers';
   static const String superAdminEmail = 'info@rajasthanlimesuppliers.com';
   static const String personalEmail = 'amaan.dhanerawala372002@gmail.com';
@@ -16,4 +25,8 @@ class AppConfig {
   static const String categoryDetails = 'category_details';
   static const String attributeDetails = 'attribute_details';
   static const String recipeDetails = 'recipe_details';
+  static const String recipeWishlist = 'recipe_wishlist';
+  static const String recipeBookmark = 'recipe_bookmark';
+  static const String recipeViews = 'recipe_views';
+  static const String cookVerificationDocuments = 'cook_verification_documents';
 }

@@ -73,12 +73,11 @@ class AttributeApiRepository implements AttributeRepository {
           break;
       }
     } catch (e) {
-      print(e);
       response = Response.badRequest();
     }
     final mergedHeaders = {...response.headers, 'Content-Type': 'application/json'};
     response = response.change(headers: mergedHeaders);
-    print(response.headers);
+
     return response;
   }
 }

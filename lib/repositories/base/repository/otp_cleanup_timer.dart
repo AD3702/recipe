@@ -17,7 +17,6 @@ class OtpCleanupScheduler {
   static void start() {
     // run once at boot
     _tick();
-    print('OTP cleanup scheduler started with interval: ${interval.inMinutes} minutes');
 
     // run periodically
     _timer = Timer.periodic(interval, (_) => _tick());
@@ -28,7 +27,6 @@ class OtpCleanupScheduler {
   }
 
   static void stop() {
-    print('Stopping OTP cleanup scheduler...');
     _timer?.cancel();
     _timer = null;
   }
@@ -37,7 +35,6 @@ class OtpCleanupScheduler {
     if (_running) return; // avoid overlapping runs
     _running = true;
     try {
-      print('OTP cleanup running at ${DateTime.now()}');
       final stopwatch = Stopwatch()..start();
       var keys = GenerateOtp().toTableJson.keys.toList();
       // Postgres example – delete OTPs older than 30 minutes
@@ -55,11 +52,9 @@ class OtpCleanupScheduler {
         await BaseRepository.baseRepository.connection.execute(Sql.named(deleteQuery));
       }
       stopwatch.stop();
-      print('OTP cleanup completed in ${stopwatch.elapsedMilliseconds} ms');
       // Optionally: VACUUM or log how many rows were deleted
     } catch (e, st) {
       // Log but don't crash the timer
-      print('OTP cleanup failed: $e\n$st');
     } finally {
       _running = false;
     }

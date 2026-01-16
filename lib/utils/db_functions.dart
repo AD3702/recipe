@@ -1,7 +1,11 @@
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:postgres/postgres.dart';
 import 'package:recipe/utils/list_extenstion.dart';
+import 'package:shelf/shelf.dart';
+import 'package:shelf_multipart/shelf_multipart.dart';
 
 class DBFunctions {
   DBFunctions._();
@@ -15,20 +19,16 @@ class DBFunctions {
         .join(', ');
     final createQuery = 'CREATE TABLE IF NOT EXISTS "$tableName" ($columns);';
     var res = await connection.execute(createQuery);
-    print("Table '$tableName' ${res.isEmpty ? 'exists' : 'created'}");
     // Fetch existing columns safely
     final result = await connection.execute("SELECT column_name FROM information_schema.columns WHERE table_name = '$tableName' ORDER BY ordinal_position");
     final existingColumns = result.map((row) => row[0] as String).toSet();
-    print('existingColumns: $existingColumns');
     // Add missing columns except 'id'
     for (var entry in sampleJson.entries) {
       if (entry.key == 'id') continue; // don't alter id column
       if (!existingColumns.contains(entry.key)) {
         final sqlType = '${dartTypeToSQL(entry.value)} NULL';
         final alterQuery = 'ALTER TABLE "$tableName" ADD COLUMN ${entry.key} $sqlType;';
-        print('Alter Query: $alterQuery');
         await connection.execute(alterQuery);
-        print("Added missing column '${entry.key}' to '$tableName'");
       }
     }
   }
@@ -51,6 +51,65 @@ class DBFunctions {
 
     final query = 'INSERT INTO "$tableName" ($columns) VALUES ($placeholders) RETURNING *;';
     return {'query': query, 'params': values};
+  }
+
+  static Map<String, dynamic> generateSmartUpdate({
+    required String table,
+    required Map<String, dynamic> oldData,
+    required Map<String, dynamic> newData,
+    List<String> ignoreParameters = const [],
+    String primaryKey = 'uuid',
+  }) {
+    ignoreParameters.add('id');
+    print(ignoreParameters);
+    for (var k in ignoreParameters) {
+      oldData.remove(k);
+      newData.remove(k);
+    }
+    if (!oldData.containsKey(primaryKey)) {
+      throw Exception('Primary key "$primaryKey" missing in oldData');
+    }
+
+    final Map<String, dynamic> updates = {};
+
+    // Only copy changed, non-null values
+    newData.forEach((key, value) {
+      if (value == null) return;
+      if (key == primaryKey) return;
+      if (key == 'created_at') return;
+
+      if (oldData[key] != value) {
+        updates[key] = value;
+      }
+    });
+
+    if (updates.isEmpty) {
+      throw Exception('No fields changed');
+    }
+
+    int i = 0;
+    final List<String> sets = [];
+    final List<dynamic> params = [];
+
+    updates.forEach((key, value) {
+      sets.add('$key = @$i');
+      params.add(value);
+      i++;
+    });
+
+    // WHERE
+    final whereIndex = i;
+    params.add(oldData[primaryKey]);
+
+    final query =
+        '''
+UPDATE "$table"
+SET ${sets.join(', ')}
+WHERE $primaryKey = @$whereIndex
+RETURNING *;
+''';
+
+    return {'query': query, 'params': params, 'changedKeys': updates.keys.toList()};
   }
 
   static Map<String, dynamic> generateInsertListQueryFromClass(String tableName, List<Map<String, dynamic>> dataList) {
@@ -139,7 +198,35 @@ class DBFunctions {
     return {'conditions': conditions, 'params': params, 'suffix': suffix, 'suffixParams': suffixParams};
   }
 
+  /// Returns ordered column names for a given table.
+  ///
+  /// Example: `await DBFunctions.getColumnNames(connection, 'recipe_details');`
+  static Future<List<String>> getColumnNames(Connection connection, String tableName, {String schema = 'public'}) async {
+    final res = await connection.execute(
+      Sql.named('''
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = @0 AND table_name = @1
+        ORDER BY ordinal_position;
+      '''),
+      parameters: [schema, tableName],
+    );
+
+    return res.map((row) => row[0] as String).toList();
+  }
+
+  /// Convenience: prints key/value pairs for the first row in a Result.
+  /// (Column names are not reliably available from `Result` in all postgres package versions.)
+  static void debugPrintFirstRow(Result res, List<String> keys) {
+    return;
+    if (res.isEmpty) return;
+    for (int i = 0; i < keys.length && i < res.first.length; i++) {
+      print('${keys[i]} | ${res.first[i]}');
+    }
+  }
+
   static mapFromResultRow(Result res, List<String> keys) {
+    debugPrintFirstRow(res, keys);
     return res.map((row) => Map.fromIterables(keys, row.toList())).toList();
   }
 
@@ -161,5 +248,66 @@ class DBFunctions {
       return 'Required parameters ${requiredParams.join(', ')} are missing';
     }
     return null;
+  }
+
+  static multipartImageConfigure(Request request, String directory, String fileTitle) async {
+    Map<String, dynamic> response = {'status': 400};
+
+    final multipart = request.multipart();
+    if (multipart == null) {
+      response['message'] = 'Content-Type must be multipart/form-data';
+      return Response.badRequest(body: jsonEncode(response));
+    }
+
+    const allowedExt = {'jpg', 'jpeg', 'png', 'webp'};
+    const maxBytes = 5 * 1024 * 1024; // 5 MB per file
+
+    // Ensure directory exists
+    final root = Directory('uploads/$directory');
+    if (!await root.exists()) {
+      await root.create(recursive: true);
+    }
+
+    final List<String> savedPaths = [];
+    int index = 0;
+
+    await for (final part in multipart.parts) {
+      final bytes = await part.readBytes();
+      if (bytes.isEmpty) continue;
+
+      if (bytes.length > maxBytes) {
+        response['message'] = 'One of the files is too large. Max allowed size is 5 MB';
+        return Response.badRequest(body: jsonEncode(response));
+      }
+
+      final filename = fileTitle;
+      String ext = 'jpg';
+      if (filename.contains('.')) {
+        ext = filename.split('.').last.toLowerCase();
+      }
+
+      if (!allowedExt.contains(ext)) {
+        response['message'] = 'Only image files are allowed. Supported: ${allowedExt.toList()}';
+        return Response.badRequest(body: jsonEncode(response));
+      }
+
+      // 1st file → no suffix, others → _1, _2, ...
+      final suffix = '_$index';
+      final fileName = '$fileTitle$suffix.$ext';
+      final filePath = '${root.path}/$fileName';
+
+      final file = File(filePath);
+      await file.writeAsBytes(bytes, flush: true);
+
+      savedPaths.add(file.path.replaceAll('\\', '/'));
+      index++;
+    }
+
+    if (savedPaths.isEmpty) {
+      response['message'] = 'No file found in form-data with key "file"';
+      return Response.badRequest(body: jsonEncode(response));
+    }
+
+    return savedPaths.length == 1 ? savedPaths.first : savedPaths;
   }
 }

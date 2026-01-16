@@ -10,6 +10,7 @@ import 'package:shelf/shelf.dart';
 
 class AuthApiRepository implements AuthRepository {
   AuthController authController = AuthController.auth;
+  UserController userController = UserController.user;
 
   @override
   Future<Response> authRootHandler(Request req) async {
@@ -32,6 +33,9 @@ class AuthApiRepository implements AuthRepository {
         case BaseRepository.login:
           String requestBody = (await req.readAsString()).convertJsonCamelToSnake;
           response = await authController.login(requestBody);
+          break;
+        case BaseRepository.register:
+          response = await userController.addUser((await req.readAsString()).convertJsonCamelToSnake, isRegister: true);
           break;
         case BaseRepository.updateToken:
           response = await authController.updateToken(req.headers['authorization'] ?? '');
@@ -57,12 +61,11 @@ class AuthApiRepository implements AuthRepository {
           break;
       }
     } catch (e) {
-      print(e);
       response = Response.badRequest();
     }
     final mergedHeaders = {...response.headers, 'Content-Type': 'application/json'};
     response = response.change(headers: mergedHeaders);
-    print(response.headers);
+
     return response;
   }
 }

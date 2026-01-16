@@ -1,15 +1,14 @@
 import 'dart:convert';
-import 'dart:math';
 
-import 'package:crypto/crypto.dart';
 import 'package:postgres/postgres.dart';
+import 'package:recipe/controller/auth_controller.dart';
 import 'package:recipe/controller/mail_controller.dart';
 import 'package:recipe/repositories/base/model/pagination_entity.dart';
 import 'package:recipe/repositories/base/repository/base_repository.dart';
 import 'package:recipe/repositories/user/model/user_entity.dart';
+import 'package:recipe/repositories/user/model/user_documents_model.dart';
 import 'package:recipe/utils/config.dart';
 import 'package:recipe/utils/db_functions.dart';
-import 'package:recipe/utils/list_extenstion.dart';
 import 'package:recipe/utils/string_extension.dart';
 import 'package:shelf/shelf.dart';
 import 'package:uuid/uuid.dart';
@@ -98,7 +97,41 @@ class UserController {
       Map<String, dynamic> response = {'status': 404, 'message': 'User not found with uuid $uuid'};
       return Response(200, body: jsonEncode(response));
     } else {
-      Map<String, dynamic> response = {'status': 200, 'message': 'User found', 'data': userResponse.toJson};
+      var responseJson = userResponse.toJson;
+      if (userResponse.userType == UserType.COOK) {
+        var document = await getUserDocumentsFromUuid(userResponse.uuid);
+        if (document != null) {
+          var responseData = userResponse.toJson;
+          responseData['verification_document'] = BaseRepository.buildFileUrl(document.toJson['filePath']);
+          responseJson = responseData;
+        }
+      }
+      Map<String, dynamic> response = {'status': 200, 'message': 'User found', 'data': responseJson};
+      return Response(200, body: jsonEncode(response));
+    }
+  }
+
+  ///GET USER PROFILE DETAILS
+  ///
+  ///
+  ///
+  Future<Response> getUserProfile(String email) async {
+    var userResponse = await getUserFromEmail(email);
+
+    if (userResponse == null) {
+      Map<String, dynamic> response = {'status': 404, 'message': 'User not found with email $email'};
+      return Response(200, body: jsonEncode(response));
+    } else {
+      var responseJson = userResponse.toJson;
+      if (userResponse.userType == UserType.COOK) {
+        var document = await getUserDocumentsFromUuid(userResponse.uuid);
+        if (document != null) {
+          var responseData = userResponse.toJson;
+          responseData['verification_document'] = BaseRepository.buildFileUrl(document.toJson['filePath']);
+          responseJson = responseData;
+        }
+      }
+      Map<String, dynamic> response = {'status': 200, 'message': 'User found', 'data': responseJson};
       return Response(200, body: jsonEncode(response));
     }
   }
@@ -112,6 +145,19 @@ class UserController {
     var resList = DBFunctions.mapFromResultRow(res, keys) as List;
     if (resList.isNotEmpty) {
       return UserEntity.fromJson(resList.first);
+    }
+    return null;
+  }
+
+  Future<UserDocumentsModel?> getUserDocumentsFromUuid(String uuid) async {
+    final conditionData = DBFunctions.buildConditions({'user_uuid': uuid});
+    final conditions = conditionData['conditions'] as List<String>;
+    final params = conditionData['params'] as List<dynamic>;
+    final query = 'SELECT ${UserDocumentsModel().toTableJson.keys.toList().join(',')} FROM ${AppConfig.cookVerificationDocuments} WHERE ${conditions.join(' AND ')}';
+    final res = await connection.execute(Sql.named(query), parameters: params);
+    var resList = DBFunctions.mapFromResultRow(res, UserDocumentsModel().toTableJson.keys.toList()) as List;
+    if (resList.isNotEmpty) {
+      return UserDocumentsModel.fromJson(resList.first);
     }
     return null;
   }
@@ -161,7 +207,7 @@ class UserController {
   ///ADD USER
   ///
   ///
-  Future<Response> addUser(String request) async {
+  Future<Response> addUser(String request, {bool isRegister = false}) async {
     Map<String, dynamic> requestData = jsonDecode(request);
     Map<String, dynamic> response = {'status': 400};
     List<String> requiredParams = ['name', 'email', 'contact', 'user_type'];
@@ -174,7 +220,7 @@ class UserController {
     UserEntity? userEntity = UserEntity.fromJson(requestData);
     String password = userEntity.password ?? DBFunctions.generateRandomPassword();
     userEntity.password = password.encryptPassword;
-    userEntity.isAdminApproved = true;
+    userEntity.isAdminApproved = !isRegister;
     if (userEntity.userType == null) {
       response['message'] = 'Usertype must be in ${UserType.values.map((e) => e.name).toList()}';
       return Response.badRequest(body: jsonEncode(response));
@@ -192,8 +238,12 @@ class UserController {
     userEntity = await createNewUser(userEntity);
     response['status'] = 200;
     response['message'] = 'User created successfully';
+    response['data'] = userEntity?.toJson;
     if (userEntity != null) {
-      // MailController.mail.sendUserCreationSuccessfulEmail([userEntity.email!], userEntity.name!, password);
+      MailController.mail.sendUserCreationSuccessfulEmail([userEntity.email!], userEntity.name!, password);
+    }
+    if (isRegister) {
+      return await AuthController.auth.login(jsonEncode({'email': userEntity?.email, 'password': password}));
     }
     return Response(201, body: jsonEncode(response));
   }
@@ -214,12 +264,87 @@ class UserController {
     return null;
   }
 
+  ///UPLOAD COOK VERIFICATION DOCUMENT via multipart/form-data
+  ///
+  /// Endpoint should receive:
+  /// - Field: file  (image file)
+  /// - Optional field: mime_type
+  ///
+  /// Content-Type: multipart/form-data
+  ///
+  ///
+
+  Future<Response> validateUserDocuments(Request request, String userUuid, String documentType) async {
+    Map<String, dynamic> response = {'status': 400};
+    final user = await getUserFromUuid(userUuid);
+    if (user == null) {
+      response['message'] = 'User not found with uuid $userUuid';
+      return Response(404, body: jsonEncode(response));
+    }
+    if (user.userType != UserType.COOK) {
+      response['message'] = 'Verification document is only allowed for user_type COOK';
+      return Response.badRequest(body: jsonEncode(response));
+    }
+
+    var multipartResponse = DBFunctions.multipartImageConfigure(request, 'cook_verification', 'verification_$userUuid');
+    if (multipartResponse is Response) {
+      return multipartResponse;
+    }
+    final doc = UserDocumentsModel(
+      uuid: const Uuid().v8(),
+      active: true,
+      deleted: false,
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+      userUuid: userUuid,
+      filePath: multipartResponse,
+      documentType: documentType,
+    );
+    var userDocuments = await getUserDocumentsFromUuid(userUuid);
+    if (userDocuments != null) {
+      // Update existing document record
+      final conditionData = DBFunctions.buildConditions({'uuid': userDocuments.uuid});
+      final conditions = conditionData['conditions'] as List<String>;
+      final params = conditionData['params'] as List<dynamic>;
+
+      final updateData = {'file_path': multipartResponse, 'updated_at': DateTime.now().toIso8601String()};
+      final setClauses = updateData.keys.map((key) => '$key = @${key}').toList();
+      final updateParams = updateData.values.toList();
+
+      final query = 'UPDATE ${AppConfig.cookVerificationDocuments} SET ${setClauses.join(', ')} WHERE ${conditions.join(' AND ')}';
+      await connection.execute(Sql.named(query), parameters: [...updateParams, ...params]);
+
+      response['status'] = 200;
+      response['message'] = 'Cook verification document updated successfully';
+      response['data'] = doc.toJson;
+      return Response(200, body: jsonEncode(response));
+    }
+    final insertQuery = DBFunctions.generateInsertQueryFromClass(AppConfig.cookVerificationDocuments, doc.toTableJson);
+    final query = insertQuery['query'] as String;
+    final params = insertQuery['params'] as List<dynamic>;
+    await connection.execute(Sql.named(query), parameters: params);
+
+    response['status'] = 200;
+    response['message'] = 'Cook verification document uploaded successfully';
+    response['data'] = doc.toJson;
+    return Response(200, body: jsonEncode(response));
+  }
+
+  Future<Response> uploadCookVerificationDocumentFormData(Request request, String userUuid) async {
+    Response validationResponse = await validateUserDocuments(request, userUuid, 'IDENTITY_PROOF');
+    return validationResponse;
+  }
+
+  Future<Response> uploadUserProfileImage(Request request, String userUuid) async {
+    Response validationResponse = await validateUserDocuments(request, userUuid, 'PROFILE_IMAGE');
+    return validationResponse;
+  }
+
   ///DELETE USER
   ///
   ///
   ///
   Future<Response> deleteUserFromUuidResponse(String uuid) async {
-    print(uuid);
     var userResponse = await getUserFromUuid(uuid);
     if (userResponse == null) {
       Map<String, dynamic> response = {'status': 404, 'message': 'User not found with uuid $uuid'};
@@ -245,7 +370,6 @@ class UserController {
   ///
   ///
   Future<Response> deactivateUserFromUuidResponse(String uuid, bool active) async {
-    print(uuid);
     var userResponse = await getUserFromUuid(uuid);
     if (userResponse == null) {
       Map<String, dynamic> response = {'status': 404, 'message': 'User not found with uuid $uuid'};

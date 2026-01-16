@@ -119,7 +119,7 @@ class UserEntity extends BaseEntity {
   };
 }
 
-enum UserType { SUPER_ADMIN, ADMIN, VENDOR, USER }
+enum UserType { SUPER_ADMIN, ADMIN, COOK, USER }
 
 extension UserTypeExtension on String {
   UserType? get userTypeFromString {
