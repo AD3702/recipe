@@ -213,7 +213,7 @@ class BaseRepository {
     // AppConfig.baseUrl = "https://api.yourdomain.com"
     // returns:
     // https://api.yourdomain.com/uploads/cook_verification/xxx.jpg
-    return '${AppConfig.baseUrl}/$cleanPath';
+    return '${'${AppConfig.baseUrl}:${AppConfig.serverPort}'}/$cleanPath';
   }
 
   // Helper
