@@ -20,6 +20,12 @@ int parseInt(dynamic value, [int defaultValue = 0]) {
   return defaultValue;
 }
 
+double parseDouble(dynamic value, [double defaultValue = 0]) {
+  if (value is double) return value;
+  if (value is String) return double.tryParse(value) ?? defaultValue;
+  return defaultValue;
+}
+
 bool parseBool(dynamic value, [bool defaultValue = false]) {
   if (value is bool) return value;
   if (value is String) {

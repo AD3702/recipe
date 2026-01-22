@@ -4,6 +4,7 @@ import 'dart:math';
 
 import 'package:postgres/postgres.dart';
 import 'package:recipe/utils/list_extenstion.dart';
+import 'package:recipe/utils/config.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf_multipart/shelf_multipart.dart';
 
@@ -13,7 +14,7 @@ class DBFunctions {
   static Future<void> createTableFromClass(Connection connection, String tableName, Map<String, dynamic> sampleJson) async {
     final columns = sampleJson.entries
         .map((entry) {
-          final sqlType = entry.key == 'id' ? 'SERIAL PRIMARY KEY' : '${dartTypeToSQL(entry.value)} NULL';
+          final sqlType = entry.key == 'id' ? 'INTEGER PRIMARY KEY' : dartTypeToSQL(entry.value);
           return '${entry.key} $sqlType';
         })
         .join(', ');
@@ -22,24 +23,83 @@ class DBFunctions {
     // Fetch existing columns safely
     final result = await connection.execute("SELECT column_name FROM information_schema.columns WHERE table_name = '$tableName' ORDER BY ordinal_position");
     final existingColumns = result.map((row) => row[0] as String).toSet();
-    // Add missing columns except 'id'
+    // Also fetch existing column types
+    final typeResult = await connection.execute("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '$tableName' ORDER BY ordinal_position");
+    final Map<String, String> existingTypes = {for (final row in typeResult) (row[0] as String): (row[1] as String)};
+    // Add missing columns and alter wrong types except 'id'
     for (var entry in sampleJson.entries) {
       if (entry.key == 'id') continue; // don't alter id column
-      if (!existingColumns.contains(entry.key)) {
-        final sqlType = '${dartTypeToSQL(entry.value)} NULL';
-        final alterQuery = 'ALTER TABLE "$tableName" ADD COLUMN ${entry.key} $sqlType;';
+
+      final colName = entry.key;
+      final desiredSqlType = dartTypeToSQL(entry.value);
+
+      // 1) Add missing column
+      if (!existingColumns.contains(colName)) {
+        final alterQuery = 'ALTER TABLE "$tableName" ADD COLUMN "$colName" $desiredSqlType;';
         await connection.execute(alterQuery);
+        continue;
+      }
+
+      // 2) Alter wrong type
+      final existingInfoType = existingTypes[colName];
+      if (existingInfoType == null) continue;
+
+      final desiredInfoType = _sqlTypeToInfoSchemaType(desiredSqlType);
+      if (desiredInfoType == null) continue;
+
+      if (_normalizeInfoSchemaType(existingInfoType) != _normalizeInfoSchemaType(desiredInfoType)) {
+        final alterType = _sqlTypeToAlterType(desiredSqlType);
+        final alterTypeQuery = 'ALTER TABLE "$tableName" ALTER COLUMN "$colName" TYPE $alterType USING "$colName"::$alterType;';
+        await connection.execute(alterTypeQuery);
       }
     }
   }
 
+  static String _normalizeInfoSchemaType(String t) {
+    return t.trim().toLowerCase();
+  }
+
+  /// Map our SQL type strings to information_schema.data_type values.
+  /// (info_schema uses values like: integer, text, boolean, double precision,
+  /// timestamp without time zone, timestamp with time zone)
+  static String? _sqlTypeToInfoSchemaType(String sqlType) {
+    final t = sqlType.trim().toUpperCase();
+    if (t == 'INTEGER' || t.startsWith('INTEGER ')) return 'integer';
+    if (t == 'TEXT' || t.startsWith('TEXT ')) return 'text';
+    if (t == 'BOOLEAN' || t.startsWith('BOOLEAN ')) return 'boolean';
+    if (t == 'DOUBLE PRECISION' || t.startsWith('DOUBLE PRECISION ')) return 'double precision';
+    if (t == 'TIMESTAMP' || t.startsWith('TIMESTAMP ')) return 'timestamp without time zone';
+    return null;
+  }
+
+  /// Map our SQL type strings to a safe ALTER TYPE target.
+  static String _sqlTypeToAlterType(String sqlType) {
+    final t = sqlType.trim().toUpperCase();
+    if (t.startsWith('INTEGER')) return 'INTEGER';
+    if (t.startsWith('TEXT')) return 'TEXT';
+    if (t.startsWith('BOOLEAN')) return 'BOOLEAN';
+    if (t.startsWith('DOUBLE PRECISION')) return 'DOUBLE PRECISION';
+    if (t.startsWith('TIMESTAMP')) return 'TIMESTAMP';
+    return 'TEXT';
+  }
+
   static String dartTypeToSQL(dynamic value) {
-    if (value is int) return 'INTEGER';
-    if (value is String) return 'TEXT';
-    if (value is double) return 'DOUBLE PRECISION';
-    if (value is bool) return 'BOOLEAN';
-    if (value is DateTime) return 'TIMESTAMP';
-    return 'TEXT'; // default
+    if (value == null) return 'TEXT';
+
+    switch (value.runtimeType) {
+      case int:
+        return 'INTEGER';
+      case double:
+        return 'DOUBLE PRECISION';
+      case bool:
+        return 'BOOLEAN';
+      case DateTime:
+        return 'TIMESTAMP';
+      case String:
+        return 'TEXT';
+      default:
+        return 'TEXT';
+    }
   }
 
   static Map<String, dynamic> generateInsertQueryFromClass(String tableName, Map<String, dynamic> data) {
@@ -152,8 +212,16 @@ RETURNING *;
     return {'query': query, 'params': params};
   }
 
-  static Map<String, dynamic> buildConditions(Map<String, dynamic> requestBody, {List<String>? searchKeys, bool deleted = false, int? limit, int? offset}) {
-    final conditions = <String>['deleted = $deleted'];
+  static Map<String, dynamic> buildConditions(Map<String, dynamic> requestBody, {List<String>? searchKeys, bool deleted = false, int? limit, int? offset, String? prefix, bool includeDelete = true}) {
+    // final conditions = <String>['deleted = $deleted'];
+    var conditions = <String>[];
+    if (includeDelete) {
+      if (prefix == null) {
+        conditions = <String>['deleted = $deleted'];
+      } else {
+        conditions = <String>['$prefix.deleted = $deleted'];
+      }
+    }
     final params = <dynamic>[];
 
     for (var key in requestBody.keys) {
@@ -164,21 +232,30 @@ RETURNING *;
       }
       if (key == 'search' && value != null && value.toString().isNotEmpty && searchKeys != null) {
         final search = value.toString().toLowerCase();
-        final searchCondition = searchKeys.map((k) => 'LOWER($k) LIKE @${params.length + searchKeys.indexOf(k)}').join(' OR ');
+        final searchCondition = searchKeys.map((k) => '${prefix != null ? '$prefix.' : ''}$k ILIKE @${params.length + searchKeys.indexOf(k)}').join(' OR ');
         conditions.add('($searchCondition)');
         for (int i = 0; i < searchKeys.length; i++) {
           params.add('%$search%');
         }
       } else if (value is bool) {
-        conditions.add('$key = @${params.length}');
+        if (prefix != null) {
+          conditions.add('$prefix.$key = @${params.length}');
+        } else {
+          conditions.add('$key = @${params.length}');
+        }
         params.add(value);
       } else if (value is List && value.isNotEmpty) {
         final placeholders = value.map((v) => '@${params.length + value.indexOf(v)}').join(', ');
         conditions.add('$key IN ($placeholders)');
         params.addAll(value);
       } else if (value != null && value.toString().isNotEmpty) {
-        conditions.add('$key = @${params.length}');
-        params.add(value);
+        final v = value.toString();
+        if (prefix != null) {
+          conditions.add('LOWER($prefix.$key) = LOWER(@${params.length})');
+        } else {
+          conditions.add('LOWER($key) = LOWER(@${params.length})');
+        }
+        params.add(v);
       }
     }
 
@@ -250,7 +327,7 @@ RETURNING *;
     return null;
   }
 
-  static multipartImageConfigure(Request request, String directory, String fileTitle) async {
+  static multipartImageConfigure(Request request, String directory, String fileTitle, {int startIndex = 0}) async {
     Map<String, dynamic> response = {'status': 400};
 
     final multipart = request.multipart();
@@ -263,7 +340,9 @@ RETURNING *;
     const maxBytes = 5 * 1024 * 1024; // 5 MB per file
 
     // Ensure directory exists
-    final root = Directory('uploads/$directory');
+    final safeDir = directory.startsWith('/') ? directory.substring(1) : directory;
+
+    final root = Directory('${AppConfig.uploadsDir}/$safeDir');
     if (!await root.exists()) {
       await root.create(recursive: true);
     }
@@ -292,14 +371,15 @@ RETURNING *;
       }
 
       // 1st file → no suffix, others → _1, _2, ...
-      final suffix = '_$index';
+      final suffix = '_${index + startIndex}';
       final fileName = '$fileTitle$suffix.$ext';
       final filePath = '${root.path}/$fileName';
 
       final file = File(filePath);
       await file.writeAsBytes(bytes, flush: true);
 
-      savedPaths.add(file.path.replaceAll('\\', '/'));
+      final relativePath = file.path.replaceAll('\\', '/').replaceFirst(AppConfig.uploadsDir, '');
+      savedPaths.add(relativePath.startsWith('/') ? relativePath : '/$relativePath');
       index++;
     }
 
@@ -309,5 +389,70 @@ RETURNING *;
     }
 
     return savedPaths.length == 1 ? savedPaths.first : savedPaths;
+  }
+
+  static String _sqlLiteral(dynamic v) {
+    if (v == null) return 'NULL';
+
+    if (v is bool) return v ? 'TRUE' : 'FALSE';
+
+    if (v is num) return v.toString();
+
+    if (v is DateTime) {
+      // Postgres timestamp literal
+      return "TIMESTAMP '${v.toIso8601String()}'";
+    }
+
+    if (v is List) {
+      // For ANY(@i) use cases. Produces ARRAY[...]
+      final items = v.map(_sqlLiteral).join(', ');
+      return 'ARRAY[$items]';
+    }
+
+    // default: string-ish
+    final s = v.toString().replaceAll("'", "''");
+    return "'$s'";
+  }
+
+  /// Expands numeric placeholders used by Sql.named: @0, @1, @2 ...
+  /// Good enough for logs.
+  ///
+  /// Example:
+  ///   print(expandNamedSql(query, params));
+  static String expandNamedSql(String query, List<dynamic> params) {
+    var out = query;
+
+    // Replace longer indices first to avoid @1 matching inside @10.
+    for (int i = params.length - 1; i >= 0; i--) {
+      out = out.replaceAll('@$i', _sqlLiteral(params[i]));
+    }
+    return out;
+  }
+
+  /// Expands numeric placeholders used by Sql.named: @0, @1, @2 ...
+  /// Good enough for logs.
+  ///
+  /// Example:
+  ///   print(expandNamedSql(query, params));
+  static String expandNamedSqlMap(String query, Map<String, dynamic> params) {
+    var out = query;
+    params.forEach((k, v) {
+      out = out.replaceAll('@$k', _sqlLiteral(params[k]));
+    });
+
+    return out;
+  }
+
+  /// Convenience logger
+  static void printSqlWithParams(String query, List<dynamic> params) {
+    final expanded = expandNamedSql(query, params);
+    // ignore: avoid_print
+    print(expanded);
+  }
+
+  static void printSqlWithParamsMap(String query, Map<String, dynamic> params) {
+    final expanded = expandNamedSqlMap(query, params);
+    // ignore: avoid_print
+    print(expanded);
   }
 }

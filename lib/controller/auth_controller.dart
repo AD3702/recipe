@@ -26,7 +26,7 @@ class AuthController {
   final otpKeys = GenerateOtp().toTableJson.keys.toList();
 
   Future<UserEntity?> getUserFromEmail(String email) async {
-    final conditionData = DBFunctions.buildConditions({'email': email});
+    final conditionData = DBFunctions.buildConditions({'email': email.toLowerCase()});
     final conditions = conditionData['conditions'] as List<String>;
     final params = conditionData['params'] as List<dynamic>;
 
@@ -67,6 +67,80 @@ class AuthController {
     return null;
   }
 
+  /// postgres `Sql.named` expects a Map of named params.
+  /// Our DBFunctions.buildConditions produces numeric placeholders like @0, @1...
+  /// This converts a positional list into a named map: {'0': v0, '1': v1, ...}
+  Map<String, dynamic> _paramsListToMap(List<dynamic> params) {
+    final m = <String, dynamic>{};
+    for (int i = 0; i < params.length; i++) {
+      m['$i'] = params[i];
+    }
+    return m;
+  }
+
+  /// Subscription snapshot for a user (premium/category/plan/start/end).
+  Future<Map<String, dynamic>> _getUserSubscriptionSnapshot(int profileUserId) async {
+    try {
+      // Fetch the latest active (or most recent) subscription row.
+      // NOTE: This controller expects user_subscriptions columns: plan_code, start_at, end_at, status, active, deleted.
+      final q = Sql.named('''
+        SELECT
+          us.plan_code,
+          us.status,
+          us.start_at,
+          us.end_at,
+          us.active,
+          us.amount_paid,
+          us.currency
+        FROM ${AppConfig.userSubscriptions} us
+        WHERE us.user_id = @0 AND us.provider_subscription_id is not NULL
+          AND (us.deleted = false OR us.deleted IS NULL)
+        ORDER BY us.active DESC, us.start_at DESC, us.created_at DESC
+        LIMIT 1
+      ''');
+
+      final res = await connection.execute(q, parameters: _paramsListToMap([profileUserId]));
+      if (res.isEmpty) {
+        return {'is_premium': false, 'category': 'FREE', 'plan_code': null, 'status': null, 'start_at': null, 'end_at': null};
+      }
+
+      final row = res.first;
+      final String? planCode = (row[0] ?? '').toString().trim().isEmpty ? null : (row[0] ?? '').toString();
+      final String? status = (row[1] ?? '').toString().trim().isEmpty ? null : (row[1] ?? '').toString();
+      final dynamic startAt = row[2];
+      final dynamic endAt = row[3];
+      final bool isActive = (row[4] as bool?) ?? false;
+      final int amountPaid = int.tryParse(row[5]?.toString() ?? '') ?? 0;
+      final String currency = (row[6] as String?) ?? '';
+
+      // Premium definition: active row + end_at in future (if available) + status not CANCELLED.
+      DateTime? endDt;
+      if (endAt is DateTime) {
+        endDt = endAt;
+      } else if (endAt != null) {
+        try {
+          endDt = DateTime.parse(endAt.toString());
+        } catch (_) {}
+      }
+
+      final bool notExpired = endDt == null ? isActive : endDt.isAfter(DateTime.now());
+      final bool notCancelled = (status ?? '').toUpperCase() != 'CANCELLED';
+      final bool isPremium = planCode != null && isActive && notExpired && notCancelled;
+      return {
+        'is_premium': isPremium,
+        'amount_paid': amountPaid,
+        'currency': currency,
+        'plan_code': planCode,
+        'status': status,
+        'start_at': startAt is DateTime ? startAt.toIso8601String() : startAt?.toString(),
+        'end_at': endAt is DateTime ? endAt.toIso8601String() : endAt?.toString(),
+      };
+    } catch (e) {
+      // On any error, keep response safe.
+      return {'is_premium': false, 'category': 'FREE', 'plan_code': null, 'status': null, 'start_at': null, 'end_at': null};
+    }
+  }
+
   ///LOGIN USER
   ///
   ///
@@ -90,7 +164,16 @@ class AuthController {
     response['status'] = 200;
     response['message'] = 'Login successful.';
     response['data'] = userEntity?.toJson;
-    response['data']['token'] = BaseRepository.baseRepository.generateJwtToken(userEntity?.email ?? '', userEntity?.userType ?? UserType.USER, userEntity?.uuid ?? '');
+    response['data']['token'] = BaseRepository.baseRepository.generateJwtToken(
+      userId: userEntity?.id ?? 0,
+      userName: userEntity?.email ?? '',
+      userType: userEntity?.userType ?? UserType.USER,
+      uuid: userEntity?.uuid ?? '',
+      contact: userEntity?.contact ?? '',
+      createdAt: userEntity?.createdAt ?? DateTime.now(),
+      password: userEntity?.password ?? '',
+    );
+    response['data']['subscription'] = await _getUserSubscriptionSnapshot(userEntity!.id);
     return Response(200, body: jsonEncode(response));
   }
 
@@ -105,7 +188,15 @@ class AuthController {
       String userName = jsonDecode(payloadJson)['userName'];
       String userType = jsonDecode(payloadJson)['userType'];
       userEntity = await getUserFromEmailAndUserType(userName, userType);
-      response['data'] = BaseRepository.baseRepository.generateJwtToken(userEntity?.email ?? '', userEntity?.userType ?? UserType.USER, userEntity?.uuid ?? '');
+      response['data']['token'] = BaseRepository.baseRepository.generateJwtToken(
+        userId: userEntity?.id ?? 0,
+        userName: userEntity?.email ?? '',
+        userType: userEntity?.userType ?? UserType.USER,
+        uuid: userEntity?.uuid ?? '',
+        contact: userEntity?.contact ?? '',
+        createdAt: userEntity?.createdAt ?? DateTime.now(),
+        password: userEntity?.password ?? '',
+      );
       response['status'] = 200;
       return Response(200, body: jsonEncode(response));
     }

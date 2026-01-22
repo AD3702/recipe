@@ -29,7 +29,7 @@ class BaseRepository {
       RequestType.GET: const <Object>[NeedLogin(adminOnly: true)],
     },
     user: {
-      RequestType.GET: const <Object>[NeedLogin(adminOnly: true)],
+      RequestType.GET: const <Object>[NeedLogin()],
       RequestType.POST: const <Object>[NeedLogin(adminOnly: true)],
     },
     userDocuments: {
@@ -42,7 +42,7 @@ class BaseRepository {
       RequestType.PUT: const <Object>[NeedLogin(adminOnly: true)],
     },
     userList: {
-      RequestType.POST: const <Object>[NeedLogin(adminOnly: true)],
+      RequestType.POST: const <Object>[NeedLogin()],
     },
     category: {
       RequestType.GET: const <Object>[NeedLogin(adminOnly: true)],
@@ -75,6 +75,7 @@ class BaseRepository {
     },
     recipeImage: {
       RequestType.PUT: const <Object>[NeedLogin()],
+      RequestType.DELETE: const <Object>[NeedLogin()],
     },
     dashboard: {
       RequestType.GET: const <Object>[NeedLogin()],
@@ -97,6 +98,44 @@ class BaseRepository {
     recipeView: {
       RequestType.PUT: [],
       RequestType.GET: <Object>[NeedLogin()],
+    },
+
+    // ---------------- Payments ----------------
+    paymentsPlans: {
+      RequestType.GET: const <Object>[],
+      RequestType.POST: const <Object>[NeedLogin(adminOnly: true)],
+      RequestType.PUT: const <Object>[NeedLogin(adminOnly: true)],
+      RequestType.DELETE: const <Object>[NeedLogin(adminOnly: true)],
+    },
+    paymentsSubscriptions: {
+      RequestType.GET: const <Object>[NeedLogin()],
+      RequestType.POST: const <Object>[NeedLogin()],
+      RequestType.PUT: const <Object>[NeedLogin()],
+      RequestType.DELETE: const <Object>[NeedLogin(adminOnly: true)],
+    },
+    paymentsRecipePricing: {
+      RequestType.GET: const <Object>[],
+      RequestType.POST: const <Object>[NeedLogin(adminOnly: true)],
+      RequestType.PUT: const <Object>[NeedLogin(adminOnly: true)],
+      RequestType.DELETE: const <Object>[NeedLogin(adminOnly: true)],
+    },
+    paymentsRecipePurchases: {
+      RequestType.GET: const <Object>[NeedLogin()],
+      RequestType.POST: const <Object>[NeedLogin()],
+    },
+    paymentsMonthlyRecipeMetrics: {
+      RequestType.GET: const <Object>[NeedLogin(adminOnly: true)],
+      RequestType.POST: const <Object>[NeedLogin(adminOnly: true)],
+    },
+    paymentsMonthlySubscriptionRevenue: {
+      RequestType.GET: const <Object>[NeedLogin(adminOnly: true)],
+      RequestType.POST: const <Object>[NeedLogin(adminOnly: true)],
+    },
+    paymentsCookMonthlyEarnings: {
+      RequestType.GET: const <Object>[NeedLogin()],
+    },
+    paymentsCookWalletTransactions: {
+      RequestType.GET: const <Object>[NeedLogin()],
     },
   };
 
@@ -139,7 +178,7 @@ class BaseRepository {
     }
 
     payloadMap = (jsonDecode(payloadJson ?? '''{}''') as Map<String, dynamic>).map((key, value) {
-      if (key == 'userName' || key == 'userType' || key == 'iss') {
+      if (key == 'userName' || key == 'userType' || key == 'iss' || key == 'userId' || key == 'uuid') {
         return MapEntry(key, (value as String).decryptBasic);
       }
       return MapEntry(key, value);
@@ -152,9 +191,24 @@ class BaseRepository {
     return Response(200, body: jsonEncode(payloadMap));
   }
 
-  String generateJwtToken(String userName, UserType userType, String uuid) {
-    final jwt = JWT({'userName': userName.encryptBasic, 'userType': userType.name.encryptBasic, 'uuid': uuid}, issuer: AppConfig.appName.encryptBasic);
-    final token = jwt.sign(SecretKey(AppConfig.secretKey), expiresIn: Duration(days: 1));
+  String generateJwtToken({
+    required int userId,
+    required String userName,
+    required UserType userType,
+    required String uuid,
+    required String contact,
+    required DateTime createdAt,
+    required String password,
+  }) {
+    final jwt = JWT({
+      'userId': userId.toString().encryptBasic,
+      'userType': userType.name.encryptBasic,
+      'uuid': uuid.encryptBasic,
+      'contact': contact.encryptBasic,
+      'createdAt': createdAt.toIso8601String().encryptBasic,
+      'password': password.encryptBasic,
+    }, issuer: AppConfig.appName.encryptBasic);
+    final token = jwt.sign(SecretKey(AppConfig.secretKey), expiresIn: Duration(days: 365));
     return token;
   }
 
@@ -191,6 +245,7 @@ class BaseRepository {
   static const String attributeList = '/attribute/list';
   static const String attributeStatus = '/attribute/status';
   static const String recipe = '/recipe';
+  static const String payments = '/payments';
   static const String toggleRecipeWishlist = '/recipe/like';
   static const String toggleRecipeBookmark = '/recipe/bookmark';
   static const String recipeDelete = '/recipe/delete';
@@ -199,9 +254,20 @@ class BaseRepository {
   static const String recipeStatus = '/recipe/status';
   static const String dashboard = '/recipe/dashboard';
   static const String recipeView = '/recipe/view';
+  static const String paymentsSubscriptions = '/payments/user_subscriptions';
+
+  // ---------------- Payments Routes ----------------
+  static const String paymentsPlans = '/payments/subscription_plans';
+  static const String paymentsRecipePricing = '/payments/recipe_pricing';
+  static const String paymentsRecipePurchases = '/payments/recipe_purchases';
+  static const String paymentsMonthlyRecipeMetrics = '/payments/monthly_recipe_metrics';
+  static const String paymentsMonthlySubscriptionRevenue = '/payments/monthly_subscription_revenue';
+  static const String paymentsCookMonthlyEarnings = '/payments/cook_monthly_earnings';
+  static const String paymentsCookWalletTransactions = '/payments/cook_wallet_transactions';
 
   static String buildFileUrl(String? filePath) {
     if (filePath == null || filePath.isEmpty) return '';
+    filePath = filePath.replaceAll('uploads', '');
 
     // Ensure forward slashes for Windows/macOS/Linux
     final normalized = filePath.replaceAll('\\', '/');
@@ -213,7 +279,7 @@ class BaseRepository {
     // AppConfig.baseUrl = "https://api.yourdomain.com"
     // returns:
     // https://api.yourdomain.com/uploads/cook_verification/xxx.jpg
-    return '${'${AppConfig.baseUrl}:${AppConfig.serverPort}'}/$cleanPath';
+    return '${'${AppConfig.baseUrl}:${AppConfig.serverPort}'}/uploads/$cleanPath';
   }
 
   // Helper

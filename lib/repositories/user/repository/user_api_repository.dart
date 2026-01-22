@@ -26,6 +26,9 @@ class UserApiRepository implements UserRepository {
       response = response.change(headers: mergedHeaders);
       return response;
     }
+    Map<String, dynamic> tokenMap = jsonDecode(await response.readAsString());
+    String? userUuid = tokenMap['uuid']?.toString();
+    int? userId = int.tryParse(tokenMap['userId']?.toString() ?? '');
     try {
       switch (requestPath) {
         case BaseRepository.user:
@@ -35,14 +38,15 @@ class UserApiRepository implements UserRepository {
               Map<String, dynamic> res = {'status': 400, 'message': 'UUID is missing from request param'};
               response = Response.badRequest(body: jsonEncode(res));
             } else {
-              response = await userController.getUserFromUuidResponse(uuid);
+              response = await userController.getUserFromUuidResponse(uuid, userId);
             }
           } else {
             response = await userController.addUser((await req.readAsString()).convertJsonCamelToSnake);
           }
           break;
+
         case BaseRepository.profile:
-          response = await userController.getUserProfile(jsonDecode((await response.readAsString()))['userName']);
+          response = await userController.getUserProfile(userUuid ?? '');
           break;
         case BaseRepository.userDocuments:
           String? uuid = queryParam['uuid'];
@@ -85,7 +89,7 @@ class UserApiRepository implements UserRepository {
           break;
         case BaseRepository.userList:
           String requestBody = (await req.readAsString()).convertJsonCamelToSnake;
-          response = await userController.getUserListResponse(jsonDecode(requestBody));
+          response = await userController.getUserListResponse(jsonDecode(requestBody), userUuid ?? '', userId ?? 0);
           break;
         default:
           response = Response(404);

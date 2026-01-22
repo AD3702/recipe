@@ -28,7 +28,8 @@ class RecipeApiRepository implements RecipeRepository {
       return response;
     }
     Map<String, dynamic> tokenMap = jsonDecode(await response.readAsString());
-    String? userUuid = tokenMap['uuid'];
+    String? userUuid = tokenMap['uuid']?.toString();
+    int? userId = int.tryParse(tokenMap['userId']?.toString() ?? '');
     try {
       switch (requestPath) {
         case BaseRepository.recipe:
@@ -38,39 +39,39 @@ class RecipeApiRepository implements RecipeRepository {
               Map<String, dynamic> res = {'status': 400, 'message': 'UUID is missing from request param'};
               response = Response.badRequest(body: jsonEncode(res));
             } else {
-              response = await recipeController.getRecipeFromUuidResponse(uuid, userUuid);
+              response = await recipeController.getRecipeFromUuidResponse(uuid, userUuid, userId);
             }
           } else if (req.method == RequestType.PUT.name) {
-            response = await recipeController.updateRecipe((await req.readAsString()).convertJsonCamelToSnake, userUuid);
+            response = await recipeController.updateRecipe((await req.readAsString()).convertJsonCamelToSnake, userUuid, userId);
           } else {
-            response = await recipeController.addRecipe((await req.readAsString()).convertJsonCamelToSnake, userUuid);
+            response = await recipeController.addRecipe((await req.readAsString()).convertJsonCamelToSnake, userUuid, userId);
           }
           break;
         case BaseRepository.toggleRecipeWishlist:
           if (req.method == RequestType.PUT.name) {
-            response = await recipeController.toggleRecipeWishlist((await req.readAsString()).convertJsonCamelToSnake, userUuid ?? '');
+            response = await recipeController.toggleRecipeWishlist((await req.readAsString()).convertJsonCamelToSnake, userId ?? 0);
           }
           break;
         case BaseRepository.dashboard:
           if (req.method == RequestType.GET.name) {
-            response = await recipeController.getDashboardDataForUser(userUuid ?? '');
+            response = await recipeController.getDashboardDataForUser(userUuid ?? '', userId ?? 0);
           }
           break;
         case BaseRepository.toggleRecipeBookmark:
           if (req.method == RequestType.PUT.name) {
-            response = await recipeController.toggleRecipeBookmark((await req.readAsString()).convertJsonCamelToSnake, userUuid ?? '');
+            response = await recipeController.toggleRecipeBookmark((await req.readAsString()).convertJsonCamelToSnake, userId ?? 0);
           }
           break;
         case BaseRepository.recipeView:
           if (req.method == RequestType.PUT.name) {
             response = await recipeController.updateRecipeViewList((await req.readAsString()).convertJsonCamelToSnake);
           } else if (req.method == RequestType.GET.name) {
-            String? recipeUuid = queryParam['recipeUuid'];
-            if (recipeUuid == null) {
-              Map<String, dynamic> res = {'status': 400, 'message': 'UUID is missing from request param'};
+            int? recipeId = int.tryParse(queryParam['recipeId'] ?? '');
+            if (recipeId == null) {
+              Map<String, dynamic> res = {'status': 400, 'message': 'ID is missing from request param'};
               response = Response.badRequest(body: jsonEncode(res));
             } else {
-              response = await recipeController.getRecipeViewCountList(userUuid ?? '', recipeUuid!);
+              response = await recipeController.getRecipeViewCountList(userUuid ?? '', recipeId!);
             }
           }
           break;
@@ -80,7 +81,17 @@ class RecipeApiRepository implements RecipeRepository {
             Map<String, dynamic> res = {'status': 400, 'message': 'UUID is missing from request param'};
             response = Response.badRequest(body: jsonEncode(res));
           } else {
-            response = await recipeController.uploadRecipeImagesResponse(req, uuid);
+            if (req.method == RequestType.PUT.name) {
+              response = await recipeController.uploadRecipeImagesResponse(req, uuid, userId);
+            } else if (req.method == RequestType.DELETE.name) {
+              String? imageIndex = queryParam['imageIndex'];
+              if (imageIndex == null) {
+                Map<String, dynamic> res = {'status': 400, 'message': 'Image index is missing from request param'};
+                response = Response.badRequest(body: jsonEncode(res));
+              } else {
+                response = await recipeController.deleteRecipeImages(uuid, imageIndex, userId);
+              }
+            }
           }
           break;
         case BaseRepository.recipeDelete:
@@ -90,7 +101,7 @@ class RecipeApiRepository implements RecipeRepository {
               Map<String, dynamic> res = {'status': 400, 'message': 'UUID is missing from request param'};
               response = Response.badRequest(body: jsonEncode(res));
             } else {
-              response = await recipeController.deleteRecipeFromUuidResponse(uuid);
+              response = await recipeController.deleteRecipeFromUuidResponse(uuid, userId);
             }
           } else {
             response = Response(200);
@@ -103,12 +114,12 @@ class RecipeApiRepository implements RecipeRepository {
             Map<String, dynamic> res = {'status': 400, 'message': 'UUID or Status is missing from request param'};
             response = Response.badRequest(body: jsonEncode(res));
           } else {
-            response = await recipeController.deactivateRecipeFromUuidResponse(uuid, active);
+            response = await recipeController.deactivateRecipeFromUuidResponse(uuid, active, userId);
           }
           break;
         case BaseRepository.recipeList:
           String requestBody = (await req.readAsString()).convertJsonCamelToSnake;
-          response = await recipeController.getRecipeListResponse(jsonDecode(requestBody), userUuid);
+          response = await recipeController.getRecipeListResponse(jsonDecode(requestBody), userUuid, userId);
           break;
         default:
           response = Response(404, body: jsonEncode({'message': 'Not found'}));

@@ -8,6 +8,7 @@ class AppConfig {
   static final dbUser = Platform.environment['DB_USER'] ?? 'rajasthanlimesuppliers';
   static final dbPassword = Platform.environment['DB_PASSWORD'] ?? 'Rajasthan@Suppliers2002';
   static final serverPort = int.parse(Platform.environment['SERVER_PORT'] ?? '9090');
+  static String uploadsDir = '';
   static const String superAdminName = 'Rajasthan Lime Suppliers';
   static const String superAdminEmail = 'info@rajasthanlimesuppliers.com';
   static const String personalEmail = 'amaan.dhanerawala372002@gmail.com';
@@ -22,5 +23,14 @@ class AppConfig {
   static const String recipeWishlist = 'recipe_wishlist';
   static const String recipeBookmark = 'recipe_bookmark';
   static const String recipeViews = 'recipe_views';
+  static const String userFollowers = 'user_followers';
   static const String cookVerificationDocuments = 'cook_verification_documents';
+  static const String subscriptionPlans = 'subscription_plans';
+  static const String userSubscriptions = 'user_subscriptions';
+  static const String recipePricing = 'recipe_pricing';
+  static const String recipePurchases = 'recipe_purchases';
+  static const String monthlyRecipeMetrics = 'monthly_recipe_metrics';
+  static const String monthlySubscriptionRevenue = 'monthly_subscription_revenue';
+  static const String cookMonthlyEarnings = 'cook_monthly_earnings';
+  static const String cookWalletTransactions = 'cook_wallet_transactions';
 }

@@ -28,6 +28,10 @@ class RecipeEntity extends BaseEntity {
   String? userUuid;
   String? userName;
   String? name;
+  String? accessTier;
+  String? currency;
+  bool? isPurchased;
+  int? price;
   double? serving;
   int? preparationTime;
   int? cookTime;
@@ -50,7 +54,6 @@ class RecipeEntity extends BaseEntity {
     super.createdAt,
     super.updatedAt,
     this.name,
-    this.views,
     this.serving,
     this.cookTime,
     this.preparationTime,
@@ -61,11 +64,16 @@ class RecipeEntity extends BaseEntity {
     this.note,
     this.nutritionInfo,
     this.recipeImageUrls,
+    this.views,
     this.isBookmarked,
     this.likedCount,
     this.bookmarkedCount,
     this.isLiked,
     this.steps,
+    this.userName,
+    this.currency,
+    this.accessTier,
+    this.price,
   });
 
   factory RecipeEntity.fromJson(Map<String, dynamic> json) => RecipeEntity(
@@ -73,6 +81,9 @@ class RecipeEntity extends BaseEntity {
     views: parseInt(json['views']),
     likedCount: parseInt(json['likedCount']),
     bookmarkedCount: parseInt(json['bookmarkedCount']),
+    price: parseInt(json['price']),
+    currency: json['currency'],
+    accessTier: json['accessTier'],
     uuid: json['uuid'] ?? const Uuid().v8(),
     active: parseBool(json['active'], true),
     deleted: parseBool(json['deleted'], false),
@@ -112,6 +123,10 @@ class RecipeEntity extends BaseEntity {
   Map<String, dynamic> get toJson => {
     'id'.snakeToCamel: id,
     'views'.snakeToCamel: views,
+    'is_purchased'.snakeToCamel: isPurchased,
+    'price'.snakeToCamel: price,
+    'currency'.snakeToCamel: currency,
+    'accessTier'.snakeToCamel: accessTier,
     'liked_count'.snakeToCamel: likedCount,
     'bookmarked_count'.snakeToCamel: bookmarkedCount,
     'uuid'.snakeToCamel: uuid,
@@ -137,6 +152,9 @@ class RecipeEntity extends BaseEntity {
 
   Map<String, dynamic> get toTableJson => {
     'id': id,
+    'views': views,
+    'liked_count': likedCount,
+    'bookmarked_count': bookmarkedCount,
     'uuid': uuid,
     'active': active,
     'created_at': createdAt.toIso8601String(),
