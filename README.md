@@ -59,3 +59,6 @@ ALTER USER rajasthanlimesuppliers CREATEDB;
 \q
 createdb -U rajasthanlimesuppliers rajasthanlimesuppliersdb
 psql -U rajasthanlimesuppliers -d rajasthanlimesuppliersdb
+
+
+kill -9 $(lsof -t -i :9090)

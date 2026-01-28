@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:postgres/postgres.dart';
 import 'package:recipe/controller/attribute_controller.dart';
 import 'package:recipe/controller/category_controller.dart';
+import 'package:recipe/controller/payments_controller.dart';
 import 'package:recipe/controller/recipe_controller.dart';
 import 'package:recipe/controller/user_controller.dart';
 import 'package:recipe/repositories/attribute/contract/attribute_repository.dart';
@@ -125,6 +126,7 @@ void main(List<String> args) async {
   await DBFunctions.createTableFromClass(BaseRepository.baseRepository.connection, AppConfig.cookMonthlyEarnings, CookMonthlyEarningEntity().toTableJson);
   await DBFunctions.createTableFromClass(BaseRepository.baseRepository.connection, AppConfig.cookWalletTransactions, CookWalletTransactionEntity().toTableJson);
   await UserController.user.createSuperAdmin();
+  await PaymentsController.payments.createSubscriptions();
   await CategoryController.category.insertNewCategoryList();
   await AttributeController.attribute.insertNewAttributeList();
   final server = await serve(handler, ip, port);

@@ -18,10 +18,10 @@ import 'package:recipe/utils/string_extension.dart';
 import 'package:uuid/uuid.dart';
 
 class AttributeEntity extends BaseEntity {
-  String? name;
-  String? label;
+  String name;
+  String label;
 
-  AttributeEntity({super.id, super.uuid, super.active, super.deleted, super.createdAt, super.updatedAt, this.name, this.label});
+  AttributeEntity({super.id, super.uuid, super.active, super.deleted, super.createdAt, super.updatedAt, this.name = '', this.label = ''});
 
   factory AttributeEntity.fromJson(Map<String, dynamic> json) {
     return AttributeEntity(

@@ -3,11 +3,11 @@ import 'package:recipe/utils/string_extension.dart';
 import 'package:uuid/uuid.dart';
 
 class UserDocumentsModel extends BaseEntity {
-  String userUuid;
+  int userId;
   String filePath;
   String documentType;
 
-  UserDocumentsModel({super.id, super.uuid, super.active, super.deleted, super.createdAt, super.updatedAt, this.userUuid = '', this.filePath = '', this.documentType = ''});
+  UserDocumentsModel({super.id, super.uuid, super.active, super.deleted, super.createdAt, super.updatedAt, this.userId = 0, this.filePath = '', this.documentType = ''});
 
   factory UserDocumentsModel.fromJson(Map<String, dynamic> json) {
     return UserDocumentsModel(
@@ -17,7 +17,7 @@ class UserDocumentsModel extends BaseEntity {
       deleted: parseBool(json['deleted'], false),
       createdAt: parseDateTime(json['created_at'], DateTime.now()),
       updatedAt: parseDateTime(json['updated_at'], DateTime.now()),
-      userUuid: json['user_uuid'],
+      userId: json['user_id'],
       filePath: json['file_path'],
       documentType: json['document_type'],
     );
@@ -27,7 +27,7 @@ class UserDocumentsModel extends BaseEntity {
     return {
       'uuid'.snakeToCamel: uuid,
       'file_path'.snakeToCamel: filePath,
-      'user_uuid'.snakeToCamel: userUuid,
+      'user_id'.snakeToCamel: userId,
       'document_type'.snakeToCamel: documentType,
     };
   }
@@ -40,7 +40,7 @@ class UserDocumentsModel extends BaseEntity {
       'deleted': deleted,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
-      'user_uuid': userUuid,
+      'user_id': userId,
       'file_path': filePath,
       'document_type': documentType,
     };

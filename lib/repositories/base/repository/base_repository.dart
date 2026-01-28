@@ -80,7 +80,14 @@ class BaseRepository {
     dashboard: {
       RequestType.GET: const <Object>[NeedLogin()],
     },
+    superAdminDashboard: {
+      RequestType.GET: const <Object>[NeedLogin(adminOnly: true)],
+    },
     toggleRecipeWishlist: {
+      RequestType.PUT: const <Object>[NeedLogin()],
+      RequestType.GET: const <Object>[NeedLogin()],
+    },
+    toggleFollowing: {
       RequestType.PUT: const <Object>[NeedLogin()],
       RequestType.GET: const <Object>[NeedLogin()],
     },
@@ -230,6 +237,7 @@ class BaseRepository {
   static const String resetPassword = '/auth/reset/password';
   static const String register = '/auth/register';
   static const String user = '/user';
+  static const String toggleFollowing = '/user/following';
   static const String profile = '/user/profile';
   static const String userDocuments = '/user/documents';
   static const String userProfileImage = '/user/profile/image';
@@ -253,6 +261,7 @@ class BaseRepository {
   static const String recipeList = '/recipe/list';
   static const String recipeStatus = '/recipe/status';
   static const String dashboard = '/recipe/dashboard';
+  static const String superAdminDashboard = '/user/dashboard';
   static const String recipeView = '/recipe/view';
   static const String paymentsSubscriptions = '/payments/user_subscriptions';
 
