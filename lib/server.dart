@@ -77,7 +77,16 @@ void configureRoutes(Router router) {
   PaymentsRepository paymentsRepository = PaymentsApiRepository();
   // ✅ serve /uploads/* from a folder outside the project (configured in main)
   // This is set via `AppConfig.uploadsDir` in main().
-  router.mount('/uploads/', createStaticHandler(AppConfig.uploadsDir, serveFilesOutsidePath: true));
+  final uploadsHandler = createStaticHandler(AppConfig.uploadsDir, serveFilesOutsidePath: true);
+
+  router.mount('/uploads/', (Request request) async {
+    if (request.method == 'OPTIONS') {
+      return Response.ok('', headers: _corsHeaders);
+    }
+
+    final response = await uploadsHandler(request);
+    return response.change(headers: _corsHeaders);
+  });
   router.mount(BaseRepository.user, userRepository.userRootHandler);
   router.mount(BaseRepository.auth, authRepository.authRootHandler);
   router.mount(BaseRepository.category, categoryRepository.categoryRootHandler);
