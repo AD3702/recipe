@@ -5,12 +5,12 @@ import 'package:recipe/utils/string_extension.dart';
 import 'package:uuid/uuid.dart';
 
 class CookMonthlyEarningEntity extends BaseEntity {
-  String? monthKey; // 2026-01
-  int? cookUserId;
-  String? source; // SUB_POOL / DIRECT_SALE
-  int? amount;
-  String? currency;
-  String? status; // PENDING / PAID
+  String monthKey; // 2026-01
+  int cookUserId;
+  String source; // SUB_POOL / DIRECT_SALE
+  int amount;
+  String currency;
+  String status; // PENDING / PAID
 
   CookMonthlyEarningEntity({
     super.id,
@@ -19,12 +19,12 @@ class CookMonthlyEarningEntity extends BaseEntity {
     super.deleted,
     super.createdAt,
     super.updatedAt,
-    this.monthKey,
-    this.cookUserId,
-    this.source,
-    this.amount,
-    this.currency,
-    this.status,
+    this.monthKey = '',
+    this.cookUserId = 0,
+    this.source = '',
+    this.amount = 0,
+    this.currency = '',
+    this.status = '',
   });
 
   factory CookMonthlyEarningEntity.fromJson(Map<String, dynamic> json) => CookMonthlyEarningEntity(

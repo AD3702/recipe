@@ -48,25 +48,14 @@ class UserApiRepository implements UserRepository {
         case BaseRepository.profile:
           response = await userController.getUserProfile(userUuid ?? '');
           break;
+        case BaseRepository.superAdminDashboard:
+          response = await userController.getSuperAdminDashboard();
+          break;
         case BaseRepository.userDocuments:
-          String? uuid = queryParam['uuid'];
-          if (uuid == null) {
-            Map<String, dynamic> res = {'status': 400, 'message': 'UUID is missing from request param'};
-            response = Response.badRequest(body: jsonEncode(res));
-          } else {
-            response = await userController.uploadCookVerificationDocumentFormData(req, uuid);
-            print(response.statusCode);
-            print(response.headers);
-          }
+          response = await userController.uploadCookVerificationDocumentFormData(req, userId ?? 0);
           break;
         case BaseRepository.userProfileImage:
-          String? uuid = queryParam['uuid'];
-          if (uuid == null) {
-            Map<String, dynamic> res = {'status': 400, 'message': 'UUID is missing from request param'};
-            response = Response.badRequest(body: jsonEncode(res));
-          } else {
-            response = await userController.uploadUserProfileImage(req, uuid);
-          }
+          response = await userController.uploadUserProfileImage(req, userId ?? 0);
           break;
         case BaseRepository.userDelete:
           String? uuid = queryParam['uuid'];
@@ -90,6 +79,11 @@ class UserApiRepository implements UserRepository {
         case BaseRepository.userList:
           String requestBody = (await req.readAsString()).convertJsonCamelToSnake;
           response = await userController.getUserListResponse(jsonDecode(requestBody), userUuid ?? '', userId ?? 0);
+          break;
+        case BaseRepository.toggleFollowing:
+          if (req.method == RequestType.PUT.name) {
+            response = await userController.toggleUserFollowing((await req.readAsString()).convertJsonCamelToSnake, userId ?? 0);
+          }
           break;
         default:
           response = Response(404);

@@ -132,6 +132,13 @@ class RecipeController {
     requestBody.remove('is_followed');
     requestBody.remove('is_purchased');
 
+    // Category filter: accept List<String> in request (category_uuid or categoryUuid)
+    // DB stores category_uuid as a JSON array string/jsonb (e.g. ["uuid1","uuid2"]) so we filter via jsonb operators.
+    final List<String> filterCategoryUuids = _parseJsonList(requestBody['category_uuid']).map((e) => e.toString()).where((e) => e.trim().isNotEmpty).toList();
+
+    // Remove so it doesn't become an equality condition by DBFunctions.buildConditions
+    requestBody.remove('category_uuid');
+
     // Seeded shuffle (stable pagination) when is_shuffled=true
     final String viewerKey = (requestBody['viewer_uuid'] ?? requestBody['viewer_id'] ?? requestBody['user_uuid'] ?? requestBody['session_id'] ?? '').toString();
     final int windowMinutes = int.tryParse((requestBody['shuffle_window_minutes'] ?? 1).toString()) ?? 1;
@@ -153,6 +160,15 @@ class RecipeController {
 
     final conditions = (conditionData['conditions'] as List<String>);
     final params = (conditionData['params'] as List<dynamic>);
+
+    // Apply category list filter (ANY match)
+    // Uses jsonb ?| operator which checks whether the jsonb array contains ANY of the strings in the provided text[].
+    // If you ever need ALL match, replace ?| with ?&.
+    if (filterCategoryUuids.isNotEmpty) {
+      final int idx = params.length;
+      conditions.add("(COALESCE(rd.category_uuid::jsonb, '[]'::jsonb) ?| @$idx)");
+      params.add(filterCategoryUuids);
+    }
 
     // Manual search across recipe fields (name, ingredients, note)
     if (searchKeyword != null && searchKeyword.isNotEmpty) {
@@ -247,10 +263,10 @@ class RecipeController {
     // Purchase flag (computed from user_subscriptions)
     final String purchasedSelect = hasUser
         ? 'EXISTS(SELECT 1 FROM ${AppConfig.userSubscriptions} usb '
-        'WHERE usb.recipe_id = rd.id '
-        'AND usb.user_id = @viewer_user_id '
-        'AND usb.provider_payment_id IS NOT NULL '
-        'AND (usb.deleted = false OR usb.deleted IS NULL)) AS is_purchased'
+              'WHERE usb.recipe_id = rd.id '
+              'AND usb.user_id = @viewer_user_id '
+              'AND usb.provider_payment_id IS NOT NULL '
+              'AND (usb.deleted = false OR usb.deleted IS NULL)) AS is_purchased'
         : 'false AS is_purchased';
 
     final String pricingSelect =
@@ -296,6 +312,8 @@ class RecipeController {
         countParamMap['viewer_user_id'] = userId;
       }
     }
+
+    DBFunctions.printSqlWithParamsMap(query, listParamMap);
 
     final res = await connection.execute(Sql.named(query), parameters: listParamMap);
     final countRes = await connection.execute(Sql.named(countQuery), parameters: countParamMap);
@@ -407,7 +425,8 @@ class RecipeController {
 
     final res = await connection.execute(Sql.named(query), parameters: paramMap);
 
-    final mapped = DBFunctions.mapFromResultRow(res, [...keys, 'user_name', 'is_liked', 'is_bookmarked', 'views', 'liked_count', 'bookmarked_count', 'access_tier', 'price', 'currency', 'is_purchased']) as List;
+    final mapped =
+        DBFunctions.mapFromResultRow(res, [...keys, 'user_name', 'is_liked', 'is_bookmarked', 'views', 'liked_count', 'bookmarked_count', 'access_tier', 'price', 'currency', 'is_purchased']) as List;
 
     if (mapped.isNotEmpty) {
       final row = mapped.first;
@@ -744,6 +763,60 @@ class RecipeController {
     return Response.ok(jsonEncode({'status': 200, 'data': data}));
   }
 
+  Future<Response> getRecipeLikeCountList(String userUuid, int recipeId) async {
+    final String query =
+        'SELECT rw.user_id, rw.recipe_id, u.name AS user_name, rw.created_at, rw.updated_at '
+        'FROM ${AppConfig.recipeWishlist} rw '
+        'INNER JOIN ${AppConfig.userDetails} u ON u.id = rw.user_id '
+        'WHERE rw.recipe_id = @recipe_id '
+        '  AND (u.deleted = false OR u.deleted IS NULL) '
+        'ORDER BY rw.updated_at DESC';
+
+    final res = await connection.execute(Sql.named(query), parameters: {'recipe_id': recipeId});
+
+    final resList = DBFunctions.mapFromResultRow(res, ['user_id', 'recipe_id', 'user_name', 'created_at', 'updated_at']) as List;
+    final data = resList
+        .map(
+          (e) => {
+            'user_id'.snakeToCamel: (e['user_id'] ?? '').toString(),
+            'recipe_id'.snakeToCamel: (e['recipe_id'] ?? '').toString(),
+            'user_name'.snakeToCamel: (e['user_name'] ?? '').toString(),
+            'created_at'.snakeToCamel: (e['created_at'] ?? '').toString(),
+            'updated_at'.snakeToCamel: (e['updated_at'] ?? '').toString(),
+          },
+        )
+        .toList();
+
+    return Response.ok(jsonEncode({'status': 200, 'data': data}));
+  }
+
+  Future<Response> getRecipeBookmarkCountList(String userUuid, int recipeId) async {
+    final String query =
+        'SELECT rb.user_id, rb.recipe_id, u.name AS user_name, rb.created_at, rb.updated_at '
+        'FROM ${AppConfig.recipeBookmark} rb '
+        'INNER JOIN ${AppConfig.userDetails} u ON u.id = rb.user_id '
+        'WHERE rb.recipe_id = @recipe_id '
+        '  AND (u.deleted = false OR u.deleted IS NULL) '
+        'ORDER BY rb.updated_at DESC';
+
+    final res = await connection.execute(Sql.named(query), parameters: {'recipe_id': recipeId});
+
+    final resList = DBFunctions.mapFromResultRow(res, ['user_id', 'recipe_id', 'user_name', 'created_at', 'updated_at']) as List;
+    final data = resList
+        .map(
+          (e) => {
+            'user_id'.snakeToCamel: (e['user_id'] ?? '').toString(),
+            'recipe_id'.snakeToCamel: (e['recipe_id'] ?? '').toString(),
+            'user_name'.snakeToCamel: (e['user_name'] ?? '').toString(),
+            'created_at'.snakeToCamel: (e['created_at'] ?? '').toString(),
+            'updated_at'.snakeToCamel: (e['updated_at'] ?? '').toString(),
+          },
+        )
+        .toList();
+
+    return Response.ok(jsonEncode({'status': 200, 'data': data}));
+  }
+
   Future<Response> getDashboardDataForUser(String userUuid, int userId) async {
     final query =
         '''
@@ -844,6 +917,7 @@ class RecipeController {
     );
     final query = updateQuery['query'] as String;
     final params = updateQuery['params'] as List<dynamic>;
+    DBFunctions.printSqlWithParams(query, params);
     final res = await connection.execute(Sql.named(query), parameters: params);
     var resList = DBFunctions.mapFromResultRow(res, keys) as List;
     if (resList.isNotEmpty) {

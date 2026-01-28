@@ -5,17 +5,17 @@ import 'package:recipe/utils/string_extension.dart';
 import 'package:uuid/uuid.dart';
 
 class UserSubscriptionEntity extends BaseEntity {
-  int? userId;
-  int? recipeId;
-  String? planCode; // PLUS/PRO/ULTRA
+  int userId;
+  int recipeId;
+  String planCode; // PLUS/PRO/ULTRA
   DateTime? startAt;
   DateTime? endAt;
   String? status; // ACTIVE/EXPIRED/CANCELLED
-  int? amountPaid;
-  String? currency; // INR
+  int amountPaid;
+  String currency; // INR
   String? paymentProvider; // RAZORPAY/STRIPE
   String? providerSubscriptionId;
-  String? providerPaymentId;
+  String providerPaymentId;
 
   UserSubscriptionEntity({
     super.id,
@@ -24,17 +24,17 @@ class UserSubscriptionEntity extends BaseEntity {
     super.deleted,
     super.createdAt,
     super.updatedAt,
-    this.userId,
-    this.recipeId,
-    this.planCode,
+    this.userId = 0,
+    this.recipeId = 0,
+    this.planCode = '',
     this.startAt,
     this.endAt,
     this.status,
-    this.amountPaid,
-    this.currency,
+    this.amountPaid = 0,
+    this.currency = '',
     this.paymentProvider,
     this.providerSubscriptionId,
-    this.providerPaymentId,
+    this.providerPaymentId = '',
   });
 
   factory UserSubscriptionEntity.fromJson(Map<String, dynamic> json) => UserSubscriptionEntity(

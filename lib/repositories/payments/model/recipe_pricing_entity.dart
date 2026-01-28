@@ -5,10 +5,10 @@ import 'package:recipe/utils/string_extension.dart';
 import 'package:uuid/uuid.dart';
 
 class RecipePricingEntity extends BaseEntity {
-  int? recipeId;
-  String? accessTier; // FREE/PLUS/PRO/ULTRA/PAID
-  int? price; // required when PAID
-  String? currency; // INR
+  int recipeId;
+  String accessTier; // FREE/PLUS/PRO/ULTRA/PAID
+  int price; // required when PAID
+  String currency; // INR
 
   RecipePricingEntity({
     super.id,
@@ -17,10 +17,10 @@ class RecipePricingEntity extends BaseEntity {
     super.deleted,
     super.createdAt,
     super.updatedAt,
-    this.recipeId,
-    this.accessTier,
-    this.price,
-    this.currency,
+    this.recipeId = 0,
+    this.accessTier = '',
+    this.price = 0,
+    this.currency = '',
   });
 
   factory RecipePricingEntity.fromJson(Map<String, dynamic> json) => RecipePricingEntity(

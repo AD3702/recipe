@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:postgres/postgres.dart';
 import 'package:recipe/controller/auth_controller.dart';
 import 'package:recipe/controller/mail_controller.dart';
+import 'package:recipe/controller/payments_controller.dart';
+import 'package:recipe/repositories/base/model/base_entity.dart';
 import 'package:recipe/repositories/base/model/pagination_entity.dart';
 import 'package:recipe/repositories/base/repository/base_repository.dart';
 import 'package:recipe/repositories/user/model/user_entity.dart';
@@ -45,7 +47,18 @@ class UserController {
         isAdminApproved: true,
         password: password.encryptPassword,
       );
-      createNewUser(superAdmin);
+      var user = await createNewUser(superAdmin);
+      PaymentsController.payments.upsertUserSubscription({
+        "user_id": user?.id,
+        "plan_code": "ULTRA",
+        "status": "ACTIVE",
+        "amount_paid": 0,
+        "currency": "₹",
+        "payment_provider": "SUPER_ADMIN",
+        "provider_subscription_id": "pay_super_admin",
+        "start_at": DateTime.now(),
+        "end_at": DateTime(DateTime.now().year + 100),
+      });
       await MailController.mail.sendUserCreationSuccessfulEmail([AppConfig.superAdminEmail, AppConfig.personalEmail], AppConfig.superAdminName, password);
     }
   }
@@ -224,13 +237,13 @@ class UserController {
       final int viewerParamIndex = params.length + suffixParams.length;
       final int viewerCountParamIndex = params.length;
 
-      final prefixedConditions = _prefixConditionsWithAlias(conditions, 'ud', selectKeys);
+      // final prefixedConditions = _prefixConditionsWithAlias(conditions, 'ud', selectKeys);
 
       query =
           'SELECT ${selectKeys.map((e) => 'ud.$e').join(',')} '
           'FROM ${AppConfig.userDetails} ud '
           'INNER JOIN ${AppConfig.userFollowers} uf ON uf.user_following_id = ud.id '
-          'WHERE ${prefixedConditions.join(' AND ')} AND uf.user_id = @$viewerParamIndex'
+          'WHERE ${conditions.join(' AND ')} AND uf.user_id = @$viewerParamIndex'
           '$shuffleOrderBy '
           '$suffix';
 
@@ -238,7 +251,7 @@ class UserController {
           'SELECT COUNT(*) '
           'FROM ${AppConfig.userDetails} ud '
           'INNER JOIN ${AppConfig.userFollowers} uf ON uf.user_following_id = ud.id '
-          'WHERE ${prefixedConditions.join(' AND ')} AND uf.user_id = @$viewerCountParamIndex';
+          'WHERE ${conditions.join(' AND ')} AND uf.user_id = @$viewerCountParamIndex';
 
       finalParams = [...params, ...suffixParams, viewerUserId];
       finalCountParams = [...params, viewerUserId];
@@ -248,8 +261,6 @@ class UserController {
       finalParams = [...params, ...suffixParams];
       finalCountParams = [...params];
     }
-    print(query);
-    print(finalParams);
     final res = await connection.execute(Sql.named(query), parameters: _paramsListToMap(finalParams));
     final countRes = await connection.execute(Sql.named(countQuery), parameters: _paramsListToMap(finalCountParams));
     int totalCount = countRes.first.first as int;
@@ -336,6 +347,7 @@ class UserController {
         LIMIT 1
       ''');
 
+
       final res = await connection.execute(q, parameters: _paramsListToMap([profileUserId]));
       if (res.isEmpty) {
         return {'is_premium': false, 'category': 'FREE', 'plan_code': null, 'status': null, 'start_at': null, 'end_at': null};
@@ -346,7 +358,6 @@ class UserController {
       final String? status = (row[1] ?? '').toString().trim().isEmpty ? null : (row[1] ?? '').toString();
       final dynamic startAt = row[2];
       final dynamic endAt = row[3];
-      final bool isActive = (row[4] as bool?) ?? false;
       final int amountPaid = int.tryParse(row[5]?.toString() ?? '') ?? 0;
       final String currency = (row[6] as String?) ?? '';
 
@@ -360,9 +371,9 @@ class UserController {
         } catch (_) {}
       }
 
-      final bool notExpired = endDt == null ? isActive : endDt.isAfter(DateTime.now());
+      final bool notExpired = endDt == null ? false : endDt.isAfter(DateTime.now());
       final bool notCancelled = (status ?? '').toUpperCase() != 'CANCELLED';
-      final bool isPremium = planCode != null && isActive && notExpired && notCancelled;
+      final bool isPremium = planCode != null && notExpired && notCancelled;
       return {
         'is_premium': isPremium,
         'amount_paid': amountPaid,
@@ -398,7 +409,7 @@ class UserController {
       }
       Map<String, dynamic> response = {'status': 200, 'message': 'Cook found successfully'};
       if (userResponse.userType == UserType.COOK) {
-        var document = await getUserDocumentsFromUuid(userResponse.uuid);
+        var document = await getUserDocumentsFromId(userResponse.id);
         if (document != null) {
           var responseData = userResponse.toJson;
           responseData['verification_document'] = BaseRepository.buildFileUrl(document.toJson['filePath']);
@@ -435,19 +446,17 @@ class UserController {
       Map<String, dynamic> response = {'status': 404, 'message': 'User not found'};
       return Response(200, body: jsonEncode(response));
     } else {
-      var responseJson = userResponse.toJson; // Subscription snapshot (premium/category/start/end)
-      final int profileUserId = userResponse.id ?? 0;
+      var responseJson = userResponse.toJson;
+      final int profileUserId = userResponse.id;
       if (profileUserId > 0) {
         responseJson['subscription'] = await _getUserSubscriptionSnapshot(profileUserId);
       } else {
         responseJson['subscription'] = {'is_premium': false, 'category': 'FREE', 'plan_code': null, 'status': null, 'start_at': null, 'end_at': null};
       }
       if (userResponse.userType == UserType.COOK) {
-        var document = await getUserDocumentsFromUuid(userResponse.uuid);
+        var document = await getUserDocumentsFromId(userResponse.id);
         if (document != null) {
-          var responseData = userResponse.toJson;
-          responseData['verification_document'] = BaseRepository.buildFileUrl(document.toJson['filePath']);
-          responseJson = responseData;
+          responseJson['verification_document'] = BaseRepository.buildFileUrl(document.toJson['filePath']);
         }
       }
       Map<String, dynamic> response = {'status': 200, 'message': 'User found', 'data': responseJson};
@@ -468,8 +477,21 @@ class UserController {
     return null;
   }
 
-  Future<UserDocumentsModel?> getUserDocumentsFromUuid(String uuid) async {
-    final conditionData = DBFunctions.buildConditions({'user_uuid': uuid});
+  Future<UserEntity?> getUserFromId(int id) async {
+    final conditionData = DBFunctions.buildConditions({'id': id});
+    final conditions = conditionData['conditions'] as List<String>;
+    final params = conditionData['params'] as List<dynamic>;
+    final query = 'SELECT ${keys.join(',')} FROM ${AppConfig.userDetails} WHERE ${conditions.join(' AND ')}';
+    final res = await connection.execute(Sql.named(query), parameters: _paramsListToMap(params));
+    var resList = DBFunctions.mapFromResultRow(res, keys) as List;
+    if (resList.isNotEmpty) {
+      return UserEntity.fromJson(resList.first);
+    }
+    return null;
+  }
+
+  Future<UserDocumentsModel?> getUserDocumentsFromId(int id) async {
+    final conditionData = DBFunctions.buildConditions({'user_id': id});
     final conditions = conditionData['conditions'] as List<String>;
     final params = conditionData['params'] as List<dynamic>;
     final query = 'SELECT ${UserDocumentsModel().toTableJson.keys.toList().join(',')} FROM ${AppConfig.cookVerificationDocuments} WHERE ${conditions.join(' AND ')}';
@@ -558,7 +580,6 @@ class UserController {
     response['status'] = 200;
     response['message'] = 'User created successfully';
     response['data'] = userEntity?.toJson;
-    print(response);
     if (userEntity != null) {
       // MailController.mail.sendUserCreationSuccessfulEmail([userEntity.email!], userEntity.name!, password);
     }
@@ -594,11 +615,11 @@ class UserController {
   ///
   ///
 
-  Future<Response> validateUserDocuments(Request request, String userUuid, String documentType) async {
+  Future<Response> validateUserDocuments(Request request, int userId, String documentType) async {
     Map<String, dynamic> response = {'status': 400};
-    final user = await getUserFromUuid(userUuid);
+    final user = await getUserFromId(userId);
     if (user == null) {
-      response['message'] = 'User not found with uuid $userUuid';
+      response['message'] = 'User not found with uuid $userId';
       return Response(404, body: jsonEncode(response));
     }
     if (user.userType != UserType.COOK) {
@@ -606,7 +627,7 @@ class UserController {
       return Response.badRequest(body: jsonEncode(response));
     }
 
-    var multipartResponse = DBFunctions.multipartImageConfigure(request, 'cook_verification', 'verification_$userUuid');
+    var multipartResponse = await DBFunctions.multipartImageConfigure(request, 'cook_verification', 'verification_$userId');
     if (multipartResponse is Response) {
       return multipartResponse;
     }
@@ -616,11 +637,11 @@ class UserController {
       deleted: false,
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
-      userUuid: userUuid,
+      userId: userId,
       filePath: multipartResponse,
       documentType: documentType,
     );
-    var userDocuments = await getUserDocumentsFromUuid(userUuid);
+    var userDocuments = await getUserDocumentsFromId(userId);
     if (userDocuments != null) {
       // Update existing document record
       final conditionData = DBFunctions.buildConditions({'uuid': userDocuments.uuid});
@@ -650,13 +671,13 @@ class UserController {
     return Response(200, body: jsonEncode(response));
   }
 
-  Future<Response> uploadCookVerificationDocumentFormData(Request request, String userUuid) async {
-    Response validationResponse = await validateUserDocuments(request, userUuid, 'IDENTITY_PROOF');
+  Future<Response> uploadCookVerificationDocumentFormData(Request request, int userId) async {
+    Response validationResponse = await validateUserDocuments(request, userId, 'IDENTITY_PROOF');
     return validationResponse;
   }
 
-  Future<Response> uploadUserProfileImage(Request request, String userUuid) async {
-    Response validationResponse = await validateUserDocuments(request, userUuid, 'PROFILE_IMAGE');
+  Future<Response> uploadUserProfileImage(Request request, int userId) async {
+    Response validationResponse = await validateUserDocuments(request, userId, 'PROFILE_IMAGE');
     return validationResponse;
   }
 
@@ -714,111 +735,403 @@ class UserController {
     return DBFunctions.mapFromResultRow(res, keys);
   }
 
-  Future<(Map<int, Map<String, int>>, Set<int>)> _getCookStatsByUuids(Map<int, String> cookIds, {required int viewerUserId}) async {
-    final Map<int, Map<String, int>> out = {};
-    final followingIds = <int>{};
-    if ((cookIds.keys.toList()).isEmpty) return (out, followingIds);
-    // Prepare default map entries.
-    for (final u in (cookIds.keys.toList())) {
-      final id = u;
-      out[id] = {'totalRecipes': 0, 'totalViews': 0, 'totalLikes': 0, 'totalFollowers': 0};
+  /// Toggle follow/unfollow for a user.
+  ///
+  /// Request body expects:
+  /// - user_following_id: int (the profile user id to follow)
+  /// - is_following: bool (true => follow, false => unfollow)
+  ///
+  /// Uses `${AppConfig.userFollowers}` table with fields:
+  /// user_id, user_following_id, created_at, updated_at
+  Future<Response> toggleUserFollowing(String request, int? userId) async {
+    final Map<String, dynamic> data = jsonDecode(request);
+
+    final int userFollowingId = int.tryParse(data['user_following_id']?.toString() ?? '') ?? 0;
+    final bool isFollowing = parseBool(data['is_following'], false);
+
+    if ((userId ?? 0) == 0 || userFollowingId == 0) {
+      return Response.badRequest(body: jsonEncode({'status': 400, 'message': 'user_id and user_following_id required'}));
     }
 
-    // NOTE: Table names below are common conventions used in this project.
-    // If your AppConfig uses different table constants/column names, adjust here.
+    // Check if relation already exists
+    final checkQuery = 'SELECT 1 FROM ${AppConfig.userFollowers} WHERE user_id = @user_id AND user_following_id = @user_following_id LIMIT 1';
 
-    // 1) Total Recipes per cook
-    try {
-      final qRecipes =
-          ''
-          'SELECT user_uuid, COUNT(*)::int AS total_recipes '
-          'FROM ${AppConfig.recipeDetails} '
-          'WHERE user_uuid = ANY(@ids) '
-          'GROUP BY user_uuid';
+    final existing = await connection.execute(Sql.named(checkQuery), parameters: {'user_id': userId, 'user_following_id': userFollowingId});
 
-      final res = await connection.execute(Sql.named(qRecipes), parameters: {'ids': (cookIds.values.toList())});
-      for (final row in res) {
-        final uuid = (row[0] ?? '').toString();
-        final v = (row[1] ?? 0) as int;
-        var id = cookIds.keys.toList()[cookIds.values.toList().indexWhere((e) => e == uuid)];
-        if (out.containsKey(id)) out[id]!['totalRecipes'] = v;
+    if (isFollowing) {
+      if (existing.isNotEmpty) {
+        return Response.ok(jsonEncode({'status': 200, 'message': 'Already following'}));
       }
-    } catch (_) {
-      // Keep zeros if table/columns not available yet.
-    }
 
-    // 2) Total Views on cook's recipes (sum of view.times)
-    try {
-      final qViews =
-          ''
-          'SELECT r.user_uuid, COALESCE(SUM(v.times), 0)::int AS total_views '
-          'FROM ${AppConfig.recipeViews} v '
-          'JOIN ${AppConfig.recipeDetails} r ON r.id = v.recipe_id '
-          'WHERE r.user_uuid = ANY(@ids) '
-          'GROUP BY r.user_uuid';
-
-      final res = await connection.execute(Sql.named(qViews), parameters: {'ids': cookIds.values.toList()});
-
-      for (final row in res) {
-        final uuid = (row[0] ?? '').toString();
-        final v = (row[1] ?? 0) as int;
-        var id = cookIds.keys.toList()[cookIds.values.toList().indexWhere((e) => e == uuid)];
-        if (out.containsKey(id)) out[id]!['totalViews'] = v;
-      }
-    } catch (_) {
-      // Keep zeros.
-    }
-
-    // 3) Total Likes on cook's recipes
-    // Assumes a wishlist/engagement table with `recipe_uuid` and `is_like`.
-    try {
-      final qLikes =
-          ''
-          'SELECT r.user_uuid, COUNT(*)::int AS total_likes '
-          'FROM ${AppConfig.recipeWishlist} w '
-          'JOIN ${AppConfig.recipeDetails} r ON r.id = w.recipe_id '
-          'WHERE r.user_uuid = ANY(@ids) '
-          'GROUP BY r.user_uuid';
-
-      final res = await connection.execute(Sql.named(qLikes), parameters: {'ids': cookIds.values.toList()});
-
-      for (final row in res) {
-        final uuid = (row[0] ?? '').toString();
-        final v = (row[1] ?? 0) as int;
-        var id = cookIds.keys.toList()[cookIds.values.toList().indexWhere((e) => e == uuid)];
-        if (out.containsKey(id)) out[id]!['totalLikes'] = v;
-      }
-    } catch (_) {
-      // Keep zeros.
-    }
-
-    // 4) Total Followers for cook + isFollowing for viewer (single query)
-    try {
-      final qFollowers =
+      final insertQuery =
           '''
-        SELECT
-          user_following_id AS cook_id,
-          COUNT(*)::int AS total_followers,
-          MAX(CASE WHEN user_id = @viewer_id THEN 1 ELSE 0 END)::int AS is_following
-        FROM ${AppConfig.userFollowers}
-        WHERE user_following_id = ANY(@ids)
-        GROUP BY user_following_id
+        INSERT INTO ${AppConfig.userFollowers}
+          (user_id, user_following_id, created_at, updated_at)
+        VALUES
+          (@user_id, @user_following_id, now(), now())
+        RETURNING *
       ''';
 
-      final res = await connection.execute(Sql.named(qFollowers), parameters: {'ids': cookIds.keys.toList(), 'viewer_id': viewerUserId});
+      await connection.execute(Sql.named(insertQuery), parameters: {'user_id': userId, 'user_following_id': userFollowingId});
 
-      for (final row in res) {
-        final cookId = (row[0] ?? 0) as int;
-        final total = (row[1] ?? 0) as int;
-        final isFollowing = (row[2] ?? 0) as int;
+      // Optional counter update: followers++ for the followed user (best-effort)
+      try {
+        await connection.execute(Sql.named('UPDATE ${AppConfig.userDetails} SET followers = COALESCE(followers, 0) + 1 WHERE id = @0'), parameters: _paramsListToMap([userFollowingId]));
+      } catch (_) {}
 
-        if (out.containsKey(cookId)) out[cookId]!['totalFollowers'] = total;
-        if (isFollowing == 1) followingIds.add(cookId);
+      return Response.ok(jsonEncode({'status': 200, 'message': 'User followed'}));
+    } else {
+      if (existing.isEmpty) {
+        return Response.ok(jsonEncode({'status': 200, 'message': 'Already unfollowed'}));
       }
-    } catch (_) {
-      // Keep zeros.
+
+      final deleteQuery =
+          '''
+        DELETE FROM ${AppConfig.userFollowers}
+        WHERE user_id = @user_id
+          AND user_following_id = @user_following_id
+      ''';
+
+      await connection.execute(Sql.named(deleteQuery), parameters: {'user_id': userId, 'user_following_id': userFollowingId});
+
+      // Optional counter update: followers-- for the followed user (best-effort, never below 0)
+      try {
+        await connection.execute(
+          Sql.named(
+            'UPDATE ${AppConfig.userDetails} '
+            'SET followers = GREATEST(COALESCE(followers, 0) - 1, 0) '
+            'WHERE id = @0',
+          ),
+          parameters: _paramsListToMap([userFollowingId]),
+        );
+      } catch (_) {}
+
+      return Response.ok(jsonEncode({'status': 200, 'message': 'User unfollowed'}));
+    }
+  }
+
+  /// SUPER ADMIN DASHBOARD
+  ///
+  /// Returns aggregated stats for admin dashboard.
+  /// Optional requestBody supports:
+  /// - from: ISO string (inclusive)
+  /// - to: ISO string (inclusive)
+  /// If not provided, default is last 30 days for trend buckets.
+  Future<Response> getSuperAdminDashboard({Map<String, dynamic>? requestBody}) async {
+    DateTime _parseDt(dynamic v) {
+      if (v == null) return DateTime.now();
+      if (v is DateTime) return v;
+      final s = v.toString().trim();
+      if (s.isEmpty) return DateTime.now();
+      try {
+        return DateTime.parse(s);
+      } catch (_) {
+        return DateTime.now();
+      }
     }
 
-    return (out, followingIds);
+    final now = DateTime.now();
+    final DateTime toDt = _parseDt(requestBody?['to'] ?? now.toIso8601String());
+    final DateTime fromDt = _parseDt(requestBody?['from'] ?? now.subtract(const Duration(days: 30)).toIso8601String());
+
+    // Keep sane ordering
+    final DateTime from = fromDt.isAfter(toDt) ? toDt.subtract(const Duration(days: 30)) : fromDt;
+    final DateTime to = toDt;
+
+    // We cast created_at from text to timestamptz in SQL, so pass timestamptz params.
+    final fromUtc = from.toUtc();
+    final toUtc = to.toUtc();
+
+    // NOTE: created_at columns in your DB appear to be stored as TEXT, so we use:
+    // NULLIF(col::text,'')::timestamptz
+    // This avoids date_trunc/type errors and compares as real timestamps.
+    const String q = r'''
+WITH
+  range AS (
+    SELECT @0::timestamptz AS from_ts, @1::timestamptz AS to_ts
+  ),
+
+  users_src AS (
+    SELECT
+      ud.*,
+      UPPER(COALESCE(ud.user_type,'USER')) AS user_type_u,
+      NULLIF(ud.created_at::text,'')::timestamptz AS created_ts
+    FROM user_details ud
+    WHERE (ud.deleted = false OR ud.deleted IS NULL)
+  ),
+
+  recipes_src AS (
+    SELECT
+      rd.*,
+      NULLIF(rd.created_at::text,'')::timestamptz AS created_ts
+    FROM recipe_details rd
+    WHERE (rd.deleted = false OR rd.deleted IS NULL)
+  ),
+
+  subs_src AS (
+    SELECT
+      us.*,
+      NULLIF(us.created_at::text,'')::timestamptz AS created_ts
+    FROM user_subscriptions us
+    WHERE (us.deleted = false OR us.deleted IS NULL)
+  ),
+
+  users_agg AS (
+    SELECT
+      COUNT(*)::int AS total,
+      COUNT(*) FILTER (WHERE active = true)::int AS active,
+      COUNT(*) FILTER (WHERE user_type_u = 'COOK')::int AS total_cooks,
+      COUNT(*) FILTER (
+        WHERE user_type_u = 'COOK'
+          AND COALESCE(is_admin_approved,false) = false
+          AND active = true
+      )::int AS pending_cook_approvals,
+      COUNT(*) FILTER (
+        WHERE created_ts >= (SELECT from_ts FROM range)
+          AND created_ts <= (SELECT to_ts FROM range)
+      )::int AS new_in_range
+    FROM users_src
+  ),
+
+  users_by_type AS (
+    SELECT jsonb_agg(x ORDER BY (x->>'count')::int DESC) AS data
+    FROM (
+      SELECT jsonb_build_object(
+        'userType', ut,
+        'count', cnt
+      ) AS x
+      FROM (
+        SELECT ud.user_type_u AS ut, COUNT(*)::int AS cnt
+        FROM users_src ud
+        GROUP BY ud.user_type_u
+      ) s
+    ) t
+  ),
+
+  signup_trend AS (
+    SELECT jsonb_agg(x ORDER BY x->>'day') AS data
+    FROM (
+      SELECT jsonb_build_object(
+        'day', to_char(d, 'YYYY-MM-DD'),
+        'count', cnt
+      ) AS x
+      FROM (
+        SELECT date_trunc('day', ud.created_ts) AS d, COUNT(*)::int AS cnt
+        FROM users_src ud, range r
+        WHERE ud.created_ts >= r.from_ts
+          AND ud.created_ts <= r.to_ts
+        GROUP BY date_trunc('day', ud.created_ts)
+      ) s
+    ) t
+  ),
+
+  recipes_agg AS (
+    SELECT
+      COUNT(*)::int AS total,
+      COUNT(*) FILTER (WHERE active = true)::int AS active,
+      COUNT(*) FILTER (
+        WHERE created_ts >= (SELECT from_ts FROM range)
+          AND created_ts <= (SELECT to_ts FROM range)
+      )::int AS new_in_range,
+      (SELECT COALESCE(SUM(COALESCE(rv.times,0)),0)::int FROM recipe_views rv)::int AS total_views,
+      (SELECT COUNT(*) FROM recipe_wishlist rw)::int AS wishlist_count,
+      (SELECT COUNT(*) FROM recipe_bookmark rb)::int AS bookmark_count
+    FROM recipes_src
+  ),
+
+  category_distribution AS (
+    SELECT jsonb_agg(x ORDER BY (x->>'count')::int DESC) AS data
+    FROM (
+      SELECT jsonb_build_object(
+        'category', cat,
+        'count', cnt
+      ) AS x
+      FROM (
+        SELECT COALESCE(cd.name,'Unknown') AS cat, COUNT(*)::int AS cnt
+        FROM recipes_src rd
+        LEFT JOIN category_details cd ON cd.uuid = rd.category_uuid
+        GROUP BY COALESCE(cd.name,'Unknown')
+        ORDER BY COUNT(*) DESC
+        LIMIT 15
+      ) s
+    ) t
+  ),
+
+  top_recipes AS (
+    SELECT jsonb_agg(x) AS data
+    FROM (
+      SELECT jsonb_build_object(
+        'id', rd.id,
+        'uuid', rd.uuid,
+        'name', rd.name,
+        'views', COALESCE(rd.views,0),
+        'likedCount', COALESCE(rd.liked_count,0),
+        'bookmarkedCount', COALESCE(rd.bookmarked_count,0),
+        'userUuid', rd.user_uuid,
+        'categoryUuid', rd.category_uuid
+      ) AS x
+      FROM recipes_src rd
+      ORDER BY COALESCE(rd.views,0) DESC, COALESCE(rd.liked_count,0) DESC
+      LIMIT 10
+    ) t
+  ),
+
+  revenue_agg AS (
+    SELECT
+      COALESCE(SUM(COALESCE(amount_paid,0)) FILTER (
+        WHERE created_ts >= (SELECT from_ts FROM range)
+          AND created_ts <= (SELECT to_ts FROM range)
+          AND (provider_payment_id IS NOT NULL OR provider_subscription_id IS NOT NULL)
+      ), 0)::int AS total_in_range,
+
+      COALESCE(SUM(COALESCE(amount_paid,0)) FILTER (
+        WHERE created_ts >= (SELECT from_ts FROM range)
+          AND created_ts <= (SELECT to_ts FROM range)
+          AND COALESCE(recipe_id,0) = 0
+          AND (provider_payment_id IS NOT NULL OR provider_subscription_id IS NOT NULL)
+      ), 0)::int AS subscription_in_range,
+
+      COALESCE(SUM(COALESCE(amount_paid,0)) FILTER (
+        WHERE created_ts >= (SELECT from_ts FROM range)
+          AND created_ts <= (SELECT to_ts FROM range)
+          AND COALESCE(recipe_id,0) <> 0
+          AND (provider_payment_id IS NOT NULL OR provider_subscription_id IS NOT NULL)
+      ), 0)::int AS recipe_in_range
+    FROM subs_src
+  ),
+
+  revenue_trend AS (
+    SELECT jsonb_agg(x ORDER BY x->>'day') AS data
+    FROM (
+      SELECT jsonb_build_object(
+        'day', to_char(d, 'YYYY-MM-DD'),
+        'revenue', rev
+      ) AS x
+      FROM (
+        SELECT date_trunc('day', us.created_ts) AS d,
+               COALESCE(SUM(COALESCE(us.amount_paid,0)),0)::int AS rev
+        FROM subs_src us, range r
+        WHERE us.created_ts >= r.from_ts
+          AND us.created_ts <= r.to_ts
+          AND (us.provider_payment_id IS NOT NULL OR us.provider_subscription_id IS NOT NULL)
+        GROUP BY date_trunc('day', us.created_ts)
+      ) s
+    ) t
+  ),
+
+  recent_transactions AS (
+    SELECT jsonb_agg(x) AS data
+    FROM (
+      SELECT jsonb_build_object(
+        'id', us.id,
+        'uuid', us.uuid,
+        'userId', us.user_id,
+        'planCode', us.plan_code,
+        'amountPaid', COALESCE(us.amount_paid,0),
+        'currency', us.currency,
+        'paymentProvider', us.payment_provider,
+        'providerPaymentId', us.provider_payment_id,
+        'providerSubscriptionId', us.provider_subscription_id,
+        'recipeId', COALESCE(us.recipe_id,0),
+        'status', us.status,
+        'createdAt', us.created_at
+      ) AS x
+      FROM subs_src us
+      ORDER BY us.created_ts DESC NULLS LAST
+      LIMIT 20
+    ) t
+  ),
+
+  active_plan_distribution AS (
+    SELECT jsonb_agg(x ORDER BY (x->>'count')::int DESC) AS data
+    FROM (
+      SELECT jsonb_build_object(
+        'planCode', pc,
+        'count', cnt
+      ) AS x
+      FROM (
+        SELECT UPPER(COALESCE(us.plan_code,'')) AS pc, COUNT(*)::int AS cnt
+        FROM subs_src us
+        WHERE COALESCE(us.recipe_id,0) = 0
+          AND UPPER(COALESCE(us.status,'')) = 'ACTIVE'
+        GROUP BY UPPER(COALESCE(us.plan_code,''))
+      ) s
+    ) t
+  ),
+
+  top_cooks AS (
+    SELECT jsonb_agg(x) AS data
+    FROM (
+      SELECT jsonb_build_object(
+        'id', ud.id,
+        'uuid', ud.uuid,
+        'name', ud.name,
+        'userName', ud.user_name,
+        'contact', ud.contact,
+        'email', ud.email,
+        'followers', COALESCE(ud.followers,0),
+        'recipes', COALESCE(ud.recipes,0),
+        'isAdminApproved', COALESCE(ud.is_admin_approved,false)
+      ) AS x
+      FROM users_src ud
+      WHERE ud.active = true
+        AND ud.user_type_u = 'COOK'
+      ORDER BY COALESCE(ud.followers,0) DESC, COALESCE(ud.recipes,0) DESC
+      LIMIT 10
+    ) t
+  )
+
+SELECT jsonb_build_object(
+  'status', 200,
+  'message', 'Super admin dashboard loaded',
+  'range', jsonb_build_object(
+    'from', (SELECT to_char((SELECT from_ts FROM range), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
+    'to',   (SELECT to_char((SELECT to_ts FROM range),   'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
+  ),
+  'users', jsonb_build_object(
+    'total', (SELECT total FROM users_agg),
+    'active', (SELECT active FROM users_agg),
+    'totalCooks', (SELECT total_cooks FROM users_agg),
+    'pendingCookApprovals', (SELECT pending_cook_approvals FROM users_agg),
+    'newInRange', (SELECT new_in_range FROM users_agg),
+    'byType', COALESCE((SELECT data FROM users_by_type), '[]'::jsonb)
+  ),
+  'recipes', jsonb_build_object(
+    'total', (SELECT total FROM recipes_agg),
+    'active', (SELECT active FROM recipes_agg),
+    'newInRange', (SELECT new_in_range FROM recipes_agg),
+    'totalViews', (SELECT total_views FROM recipes_agg),
+    'wishlistCount', (SELECT wishlist_count FROM recipes_agg),
+    'bookmarkCount', (SELECT bookmark_count FROM recipes_agg),
+    'categoryDistribution', COALESCE((SELECT data FROM category_distribution), '[]'::jsonb),
+    'topRecipes', COALESCE((SELECT data FROM top_recipes), '[]'::jsonb)
+  ),
+  'revenue', jsonb_build_object(
+    'totalInRange', (SELECT total_in_range FROM revenue_agg),
+    'subscriptionInRange', (SELECT subscription_in_range FROM revenue_agg),
+    'recipeInRange', (SELECT recipe_in_range FROM revenue_agg)
+  ),
+  'transactions', jsonb_build_object(
+    'recent', COALESCE((SELECT data FROM recent_transactions), '[]'::jsonb)
+  ),
+  'topCooks', COALESCE((SELECT data FROM top_cooks), '[]'::jsonb)
+) AS data;
+''';
+
+    try {
+      final res = await connection.execute(Sql.named(q), parameters: _paramsListToMap([fromUtc, toUtc]));
+
+      if (res.isEmpty) {
+        return Response.ok(jsonEncode({'status': 200, 'message': 'Super admin dashboard loaded', 'data': {}}), headers: {'Content-Type': 'application/json'});
+      }
+
+      final dynamic raw = res.first.first;
+      // postgres.dart may return Map-like JSON or a String; normalize.
+      final decoded = raw is String ? jsonDecode(raw) : (raw is Map ? raw : jsonDecode(raw.toString()));
+
+      return Response.ok(jsonEncode(decoded), headers: {'Content-Type': 'application/json'});
+    } catch (e) {
+      return Response.internalServerError(body: jsonEncode({'status': 500, 'message': 'Failed to load dashboard', 'error': e.toString()}), headers: {'Content-Type': 'application/json'});
+    }
   }
 }

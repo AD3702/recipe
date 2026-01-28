@@ -4,8 +4,8 @@ import 'package:uuid/uuid.dart';
 
 class UserFollowersTable {
   int id;
-  int? userId;
-  int? userFollowingId;
+  int userId;
+  int userFollowingId;
   DateTime createdAt;
   DateTime updatedAt;
 

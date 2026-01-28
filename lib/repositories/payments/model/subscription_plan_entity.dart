@@ -7,10 +7,11 @@ import 'package:uuid/uuid.dart';
 class SubscriptionPlanEntity extends BaseEntity {
   String? code; // PLUS / PRO / ULTRA
   String? name; // Plus / Pro / Ultra
-  int? priceMonthly;
-  int? priceYearly;
+  String? userType;
+  int priceMonthly;
+  int priceYearly;
   String? currency; // INR
-  int? rank; // 1/2/3
+  int rank; // 1/2/3
 
   SubscriptionPlanEntity({
     super.id,
@@ -21,10 +22,10 @@ class SubscriptionPlanEntity extends BaseEntity {
     super.updatedAt,
     this.code,
     this.name,
-    this.priceMonthly,
-    this.priceYearly,
+    this.priceMonthly = 0,
+    this.priceYearly = 0,
     this.currency,
-    this.rank,
+    this.rank = 0,
   });
 
   factory SubscriptionPlanEntity.fromJson(Map<String, dynamic> json) => SubscriptionPlanEntity(
@@ -61,6 +62,7 @@ class SubscriptionPlanEntity extends BaseEntity {
     'id': id,
     'uuid': uuid,
     'active': active,
+    'user_type': userType,
     'deleted': deleted,
     'created_at': createdAt.toIso8601String(),
     'updated_at': updatedAt.toIso8601String(),

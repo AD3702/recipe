@@ -51,6 +51,15 @@ class RecipeApiRepository implements RecipeRepository {
           if (req.method == RequestType.PUT.name) {
             response = await recipeController.toggleRecipeWishlist((await req.readAsString()).convertJsonCamelToSnake, userId ?? 0);
           }
+          if (req.method == RequestType.GET.name) {
+            int? recipeId = int.tryParse(queryParam['recipeId'] ?? '');
+            if (recipeId == null) {
+              Map<String, dynamic> res = {'status': 400, 'message': 'ID is missing from request param'};
+              response = Response.badRequest(body: jsonEncode(res));
+            } else {
+              response = await recipeController.getRecipeLikeCountList(userUuid ?? '', recipeId!);
+            }
+          }
           break;
         case BaseRepository.dashboard:
           if (req.method == RequestType.GET.name) {
@@ -60,6 +69,15 @@ class RecipeApiRepository implements RecipeRepository {
         case BaseRepository.toggleRecipeBookmark:
           if (req.method == RequestType.PUT.name) {
             response = await recipeController.toggleRecipeBookmark((await req.readAsString()).convertJsonCamelToSnake, userId ?? 0);
+          }
+          if (req.method == RequestType.GET.name) {
+            int? recipeId = int.tryParse(queryParam['recipeId'] ?? '');
+            if (recipeId == null) {
+              Map<String, dynamic> res = {'status': 400, 'message': 'ID is missing from request param'};
+              response = Response.badRequest(body: jsonEncode(res));
+            } else {
+              response = await recipeController.getRecipeBookmarkCountList(userUuid ?? '', recipeId!);
+            }
           }
           break;
         case BaseRepository.recipeView:

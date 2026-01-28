@@ -40,12 +40,16 @@ class PaymentsApiRepository implements PaymentsRepository {
         case BaseRepository.paymentsPlans:
           if (req.method == RequestType.GET.name) {
             String? userType = queryParam['userType'];
-            response = await paymentsController.getSubscriptionPlansList(userType);
+            bool isUpgrade = bool.tryParse(queryParam['isUpgrade'] ?? '') ?? false;
+            response = await paymentsController.getSubscriptionPlansList(userId ?? 0, userType, isUpgrade: isUpgrade);
           }
           break;
         case BaseRepository.paymentsSubscriptions:
           if (req.method == RequestType.POST.name) {
             response = await paymentsController.upsertUserSubscription(jsonDecode(await req.readAsString()));
+          } else if (req.method == RequestType.GET.name) {
+            int? userIdParam = queryParam['userId'];
+            response = await paymentsController.getUserSubscriptionsList(userIdParam ?? userId ?? 0);
           }
           break;
       }

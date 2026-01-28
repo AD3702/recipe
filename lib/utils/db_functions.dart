@@ -248,7 +248,16 @@ RETURNING *;
         final placeholders = value.map((v) => '@${params.length + value.indexOf(v)}').join(', ');
         conditions.add('$key IN ($placeholders)');
         params.addAll(value);
+      } else if (value is num) {
+        // Numeric columns (e.g., id) should NOT use LOWER().
+        if (prefix != null) {
+          conditions.add('$prefix.$key = @${params.length}');
+        } else {
+          conditions.add('$key = @${params.length}');
+        }
+        params.add(value);
       } else if (value != null && value.toString().isNotEmpty) {
+        // String-ish columns: do a case-insensitive equality.
         final v = value.toString();
         if (prefix != null) {
           conditions.add('LOWER($prefix.$key) = LOWER(@${params.length})');

@@ -4,8 +4,8 @@ import 'package:uuid/uuid.dart';
 
 class RecipeWishlist {
   int id;
-  int? userId;
-  int? recipeId;
+  int userId;
+  int recipeId;
   DateTime createdAt;
   DateTime updatedAt;
 

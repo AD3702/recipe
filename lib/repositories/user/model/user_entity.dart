@@ -31,6 +31,7 @@ class UserEntity extends BaseEntity {
   bool isContactVerified;
   bool isEmailVerified;
   bool isAdminApproved;
+  bool isRejected;
   int liked;
   int bookmark;
   int views;
@@ -58,6 +59,7 @@ class UserEntity extends BaseEntity {
     this.isContactVerified = false,
     this.isEmailVerified = false,
     this.isAdminApproved = false,
+    this.isRejected = false,
   });
 
   factory UserEntity.fromJson(Map<String, dynamic> json) {
@@ -82,6 +84,7 @@ class UserEntity extends BaseEntity {
       isContactVerified: parseBool(json['is_contact_verified']),
       isEmailVerified: parseBool(json['is_email_verified']),
       isAdminApproved: parseBool(json['is_admin_approved']),
+      isRejected: parseBool(json['is_rejected']),
     );
   }
 
@@ -106,6 +109,7 @@ class UserEntity extends BaseEntity {
     'is_contact_verified': isContactVerified,
     'is_email_verified': isEmailVerified,
     'is_admin_approved': isAdminApproved,
+    'is_rejected': isRejected,
   };
 
   Map<String, dynamic> get toJson => {
@@ -127,6 +131,7 @@ class UserEntity extends BaseEntity {
     'is_contact_verified'.snakeToCamel: isContactVerified,
     'is_email_verified'.snakeToCamel: isEmailVerified,
     'is_admin_approved'.snakeToCamel: isAdminApproved,
+    'is_rejected'.snakeToCamel: isRejected,
   };
 }
 
