@@ -93,6 +93,10 @@ void main(List<String> args) async {
   );
   final uploadsDir = Platform.environment['UPLOADS_DIR'] ?? '${Directory.current.path}/../uploads';
 
+  stdout.writeln('========================================');
+  stdout.writeln('🚀 Recipe Server Starting');
+  stdout.writeln('🌍 Public URL : ${AppConfig.publicBaseUrl ?? AppConfig.baseUrl}');
+  stdout.writeln('========================================');
   // Ensure the directory exists so static handler can serve files.
   Directory(uploadsDir).createSync(recursive: true);
 
