@@ -144,7 +144,7 @@ class AuthController {
   ///LOGIN USER
   ///
   ///
-  Future<Response> login(String request) async {
+  Future<Response> login(String request, {bool showAdminValidation = true}) async {
     Map<String, dynamic> requestData = jsonDecode(request);
     Map<String, dynamic> response = {'status': 400};
     UserEntity? userEntity;
@@ -161,6 +161,11 @@ class AuthController {
       return Response.badRequest(body: jsonEncode(response));
     }
     userEntity = await getUserFromEmail(requestData['email']);
+    print(showAdminValidation);
+    if (!(userEntity?.isAdminApproved ?? false) && userEntity?.userType == UserType.COOK && showAdminValidation) {
+      response['message'] = 'Please wait while your account is being approved by the admin';
+      return Response.ok(jsonEncode(response));
+    }
     response['status'] = 200;
     response['message'] = 'Login successful.';
     response['data'] = userEntity?.toJson;

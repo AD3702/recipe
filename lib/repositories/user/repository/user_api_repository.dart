@@ -48,6 +48,11 @@ class UserApiRepository implements UserRepository {
         case BaseRepository.profile:
           response = await userController.getUserProfile(userUuid ?? '');
           break;
+        case BaseRepository.cookApproval:
+          int? id = int.tryParse(queryParam['id'] ?? '');
+          bool? isAdminApprovedRequest = bool.tryParse(queryParam['isAdminApprovedRequest'] ?? '');
+          response = await userController.updateUserAdminApproval(id ?? 0, isAdminApprovedRequest ?? false);
+          break;
         case BaseRepository.superAdminDashboard:
           response = await userController.getSuperAdminDashboard();
           break;

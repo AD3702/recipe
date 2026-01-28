@@ -65,6 +65,9 @@ class BaseRepository {
     attributeStatus: {
       RequestType.PUT: const <Object>[NeedLogin(adminOnly: true)],
     },
+    cookApproval: {
+      RequestType.PUT: const <Object>[NeedLogin(adminOnly: true)],
+    },
     attributeList: {
       RequestType.POST: const <Object>[NeedLogin(adminOnly: true)],
     },
@@ -239,6 +242,8 @@ class BaseRepository {
   static const String user = '/user';
   static const String toggleFollowing = '/user/following';
   static const String profile = '/user/profile';
+  static const String cookApproval = '/user/cook_approval';
+  static const String superAdminDashboard = '/user/dashboard';
   static const String userDocuments = '/user/documents';
   static const String userProfileImage = '/user/profile/image';
   static const String userDelete = '/user/delete';
@@ -261,7 +266,6 @@ class BaseRepository {
   static const String recipeList = '/recipe/list';
   static const String recipeStatus = '/recipe/status';
   static const String dashboard = '/recipe/dashboard';
-  static const String superAdminDashboard = '/user/dashboard';
   static const String recipeView = '/recipe/view';
   static const String paymentsSubscriptions = '/payments/user_subscriptions';
 

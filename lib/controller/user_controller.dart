@@ -74,18 +74,6 @@ class UserController {
     return m;
   }
 
-  /// Prefix simple column references with a table alias for JOIN queries.
-  /// This avoids ambiguous columns like `active`, `deleted`, `user_type`.
-  List<String> _prefixConditionsWithAlias(List<String> conditions, String alias, List<String> cols) {
-    var out = conditions;
-    for (final c in cols) {
-      // word-boundary replace: active -> ud.active, etc.
-      final re = RegExp(r'\b' + RegExp.escape(c) + r'\b');
-      out = out.map((s) => s.replaceAllMapped(re, (m) => '$alias.$c')).toList();
-    }
-    return out;
-  }
-
   ///GET USER LIST
   ///
   ///
@@ -120,7 +108,7 @@ class UserController {
 
     // Deterministic shuffle order (same seed => same order)
     // Using md5 on seed + id gives a stable pseudo-random ordering.
-    final String shuffleOrderBy = isShuffled ? " ORDER BY md5('$safeSeed' || ud.id::text)" : '';
+    final String shuffleOrderBy = isShuffled ? " ORDER BY md5('$safeSeed' || ud.id::text)" : " ORDER BY ud.is_admin_approved ASC, ud.id DESC";
     if (isCook ?? false) {
       requestBody['user_type'] = UserType.COOK.name;
     }
@@ -256,8 +244,9 @@ class UserController {
       finalParams = [...params, ...suffixParams, viewerUserId];
       finalCountParams = [...params, viewerUserId];
     } else {
-      query = 'SELECT ${selectKeys.join(',')} FROM ${AppConfig.userDetails} ud WHERE ${conditions.join(' AND ')}$shuffleOrderBy $suffix';
-      countQuery = 'SELECT COUNT(*) FROM ${AppConfig.userDetails} ud WHERE ${conditions.join(' AND ')}';
+      var isAdminApprovedQuery = !isShuffled ? "" : "  AND ud.is_admin_approved = true";
+      query = 'SELECT ${selectKeys.join(',')} FROM ${AppConfig.userDetails} ud WHERE ${conditions.join(' AND ')}$isAdminApprovedQuery$shuffleOrderBy $suffix';
+      countQuery = 'SELECT COUNT(*) FROM ${AppConfig.userDetails} ud WHERE ${conditions.join(' AND ')}$isAdminApprovedQuery';
       finalParams = [...params, ...suffixParams];
       finalCountParams = [...params];
     }
@@ -346,7 +335,6 @@ class UserController {
         ORDER BY us.active DESC, us.start_at DESC, us.created_at DESC
         LIMIT 1
       ''');
-
 
       final res = await connection.execute(q, parameters: _paramsListToMap([profileUserId]));
       if (res.isEmpty) {
@@ -581,12 +569,12 @@ class UserController {
     response['message'] = 'User created successfully';
     response['data'] = userEntity?.toJson;
     if (userEntity != null) {
-      // MailController.mail.sendUserCreationSuccessfulEmail([userEntity.email!], userEntity.name!, password);
+      MailController.mail.sendUserCreationSuccessfulEmail([userEntity.email!], userEntity.name!, password);
     }
     if (isRegister) {
-      return await AuthController.auth.login(jsonEncode({'email': userEntity?.email, 'password': password}));
+      return await AuthController.auth.login(jsonEncode({'email': userEntity?.email, 'password': password}), showAdminValidation: false);
     }
-    return Response(201, body: jsonEncode(response));
+    return Response(200, body: jsonEncode(response));
   }
 
   ///CREATE USER
@@ -733,6 +721,83 @@ class UserController {
     final query = 'UPDATE ${AppConfig.userDetails} SET active = $active WHERE ${conditions.join(' AND ')}';
     final res = await connection.execute(Sql.named(query), parameters: params);
     return DBFunctions.mapFromResultRow(res, keys);
+  }
+
+  /// APPROVE / REJECT USER (Admin)
+  ///
+  /// Request body expects one of:
+  /// - user_id: int
+  /// - user_uuid: String
+  ///
+  /// And flags:
+  /// - is_admin_approved: bool
+  /// - is_rejected: bool
+  ///
+  /// Rules:
+  /// - Both flags cannot be true at the same time.
+  /// - If approving => is_rejected is forced to false.
+  /// - If rejecting => is_admin_approved is forced to false.
+  Future<Response> updateUserAdminApproval(int userId, bool isAdminApprovedRequest) async {
+    final bool isAdminApprovedIn = isAdminApprovedRequest;
+    final bool isRejectedIn = !isAdminApprovedRequest;
+
+    if (userId == 0) {
+      return Response.badRequest(body: jsonEncode({'status': 400, 'message': 'user_id or user_uuid required'}));
+    }
+
+    bool isAdminApproved = isAdminApprovedIn;
+    bool isRejected = isRejectedIn;
+
+    if (isAdminApproved && isRejected) {
+      return Response.badRequest(body: jsonEncode({'status': 400, 'message': 'Both is_admin_approved and is_rejected cannot be true'}));
+    }
+
+    // Normalize flags
+    if (isAdminApproved) {
+      isRejected = false;
+    }
+    if (isRejected) {
+      isAdminApproved = false;
+    }
+
+    // Fetch user to validate existence
+    UserEntity? user;
+    if (userId > 0) {
+      user = await getUserFromId(userId);
+    }
+
+    if (user == null) {
+      return Response(200, body: jsonEncode({'status': 404, 'message': 'User not found'}));
+    }
+
+    try {
+      final String whereClause = 'id = @0';
+      final dynamic whereValue = userId;
+
+      // NOTE: assumes `user_details` has columns: is_admin_approved, is_rejected, updated_at
+      await connection.execute(
+        Sql.named(
+          'UPDATE ${AppConfig.userDetails} '
+          'SET is_admin_approved = @1, is_rejected = @2, updated_at = @3 '
+          'WHERE $whereClause '
+          'RETURNING ${keys.join(',')}',
+        ),
+        parameters: _paramsListToMap([whereValue, isAdminApproved, isRejected, DateTime.now().toIso8601String()]),
+      );
+
+      // Return latest user row
+      final updatedUser = await getUserFromId(userId);
+
+      return Response.ok(
+        jsonEncode({
+          'status': 200,
+          'message': isAdminApproved ? 'User approved successfully' : (isRejected ? 'User rejected successfully' : 'User admin approval updated successfully'),
+          'data': updatedUser?.toJson,
+        }),
+      );
+    } catch (e) {
+      return Response.internalServerError(body: jsonEncode({'status': 500, 'message': 'Failed to update user approval', 'error': e.toString()}));
+    }
   }
 
   /// Toggle follow/unfollow for a user.
