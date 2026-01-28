@@ -27,6 +27,7 @@ class UserEntity extends BaseEntity {
   String? email;
   String? userName;
   String? password;
+  String? verificationDocument;
   UserType? userType;
   bool isContactVerified;
   bool isEmailVerified;
@@ -49,6 +50,7 @@ class UserEntity extends BaseEntity {
     this.contact,
     this.email,
     this.userName,
+    this.verificationDocument,
     this.password,
     this.liked = 0,
     this.bookmark = 0,
@@ -81,6 +83,7 @@ class UserEntity extends BaseEntity {
       email: json['email'],
       userName: json['user_name'],
       password: json['password'],
+      verificationDocument: json['verificationDocument'],
       isContactVerified: parseBool(json['is_contact_verified']),
       isEmailVerified: parseBool(json['is_email_verified']),
       isAdminApproved: parseBool(json['is_admin_approved']),
@@ -118,6 +121,7 @@ class UserEntity extends BaseEntity {
     'liked'.snakeToCamel: liked,
     'bookmark'.snakeToCamel: bookmark,
     'views'.snakeToCamel: views,
+    'verification_document'.snakeToCamel: verificationDocument,
     'followers'.snakeToCamel: followers,
     'uuid'.snakeToCamel: uuid,
     'active'.snakeToCamel: active,

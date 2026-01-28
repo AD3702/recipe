@@ -281,6 +281,10 @@ class UserController {
     }
 
     for (var user in resList) {
+      if (user['user_type'] == 'COOK') {
+        var document = await getUserDocumentsFromId(user['id']);
+        user['verificationDocument'] = BaseRepository.buildFileUrl(document?.toJson['filePath']);
+      }
       userList.add(UserEntity.fromJson(user));
     }
     return (userList, paginationEntity);
@@ -400,7 +404,7 @@ class UserController {
         var document = await getUserDocumentsFromId(userResponse.id);
         if (document != null) {
           var responseData = userResponse.toJson;
-          responseData['verification_document'] = BaseRepository.buildFileUrl(document.toJson['filePath']);
+          responseData['verificationDocument'] = BaseRepository.buildFileUrl(document.toJson['filePath']);
           responseJson = responseData;
         }
       }
@@ -444,7 +448,7 @@ class UserController {
       if (userResponse.userType == UserType.COOK) {
         var document = await getUserDocumentsFromId(userResponse.id);
         if (document != null) {
-          responseJson['verification_document'] = BaseRepository.buildFileUrl(document.toJson['filePath']);
+          responseJson['verificationDocument'] = BaseRepository.buildFileUrl(document.toJson['filePath']);
         }
       }
       Map<String, dynamic> response = {'status': 200, 'message': 'User found', 'data': responseJson};
