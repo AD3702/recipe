@@ -2,6 +2,7 @@ import 'dart:io';
 
 class AppConfig {
   static get baseUrl => Platform.environment['BASE_URL'] ?? 'http://localhost';
+  static String? publicBaseUrl = Platform.environment['PUBLIC_BASE_URL'];
   static final dbHost = Platform.environment['DB_HOST'] ?? 'localhost';
   static final dbPort = int.parse(Platform.environment['DB_PORT'] ?? '5432');
   static final dbName = Platform.environment['DB_NAME'] ?? 'rajasthanlimesuppliersdb';

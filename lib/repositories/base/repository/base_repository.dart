@@ -292,7 +292,11 @@ class BaseRepository {
     // AppConfig.baseUrl = "https://api.yourdomain.com"
     // returns:
     // https://api.yourdomain.com/uploads/cook_verification/xxx.jpg
-    return '${'${AppConfig.baseUrl}:${AppConfig.serverPort}'}/uploads/$cleanPath';
+    if (AppConfig.publicBaseUrl != null) {
+      return '${AppConfig.publicBaseUrl}/uploads/$cleanPath';
+    } else {
+      return '${'${AppConfig.baseUrl}:${AppConfig.serverPort}'}/uploads/$cleanPath';
+    }
   }
 
   // Helper
