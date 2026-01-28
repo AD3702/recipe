@@ -519,6 +519,20 @@ class UserController {
     return null;
   }
 
+  Future<UserEntity?> getUserFromUserName(String userName) async {
+    final conditionData = DBFunctions.buildConditions({'user_name': userName});
+    final conditions = conditionData['conditions'] as List<String>;
+    final params = conditionData['params'] as List<dynamic>;
+
+    final query = 'SELECT ${keys.join(',')} FROM ${AppConfig.userDetails} WHERE ${conditions.join(' AND ')}';
+    final res = await connection.execute(Sql.named(query), parameters: _paramsListToMap(params));
+    var resList = DBFunctions.mapFromResultRow(res, keys) as List;
+    if (resList.isNotEmpty) {
+      return UserEntity.fromJson(resList.first);
+    }
+    return null;
+  }
+
   Future<List<UserEntity>> getUserFromUserType(UserType userType) async {
     final conditionData = DBFunctions.buildConditions({'user_type': userType.name});
     final conditions = conditionData['conditions'] as List<String>;
@@ -539,7 +553,7 @@ class UserController {
   Future<Response> addUser(String request, {bool isRegister = false}) async {
     Map<String, dynamic> requestData = jsonDecode(request);
     Map<String, dynamic> response = {'status': 400};
-    List<String> requiredParams = ['name', 'email', 'contact', 'user_type'];
+    List<String> requiredParams = ['name', 'email', 'contact', 'user_type', 'user_name'];
     List<String> requestParams = requestData.keys.toList();
     var res = DBFunctions.checkParamValidRequest(requestParams, requiredParams);
     if (res != null) {
@@ -562,6 +576,11 @@ class UserController {
     UserEntity? userWithContact = await getUserFromContact(userEntity.contact ?? '');
     if (userWithContact != null) {
       response['message'] = 'User with contact already exists';
+      return Response.badRequest(body: jsonEncode(response));
+    }
+    UserEntity? userWithUserName = await getUserFromUserName(userEntity.userName ?? '');
+    if (userWithUserName != null) {
+      response['message'] = 'User with username already exists';
       return Response.badRequest(body: jsonEncode(response));
     }
     userEntity = await createNewUser(userEntity);
