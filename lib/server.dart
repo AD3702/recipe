@@ -61,7 +61,8 @@ Middleware _corsMiddleware() {
       }
 
       final response = await innerHandler(request);
-      return response.change(headers: _corsHeaders);
+      // Merge CORS headers with existing headers (do not overwrite content-type, etc.)
+      return response.change(headers: {...response.headers, ..._corsHeaders});
     };
   };
 }
@@ -85,7 +86,8 @@ void configureRoutes(Router router) {
     }
 
     final response = await uploadsHandler(request);
-    return response.change(headers: _corsHeaders);
+    // Merge CORS headers with static handler headers (content-type, cache-control, etc.)
+    return response.change(headers: {...response.headers, ..._corsHeaders});
   });
   router.mount(BaseRepository.user, userRepository.userRootHandler);
   router.mount(BaseRepository.auth, authRepository.authRootHandler);
