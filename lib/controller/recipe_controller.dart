@@ -313,8 +313,6 @@ class RecipeController {
       }
     }
 
-    DBFunctions.printSqlWithParamsMap(query, listParamMap);
-
     final res = await connection.execute(Sql.named(query), parameters: listParamMap);
     final countRes = await connection.execute(Sql.named(countQuery), parameters: countParamMap);
 
@@ -847,6 +845,20 @@ class RecipeController {
   ///
   Future<Response> updateRecipe(String request, String? userUuid, int? userId) async {
     Map<String, dynamic> requestData = jsonDecode(request);
+    // Pricing fields (optional). These belong to recipe_pricing, not recipe_details.
+    final bool hasPricingInRequest = requestData.containsKey('access_tier') || requestData.containsKey('accessTier') || requestData.containsKey('price') || requestData.containsKey('currency');
+    final Map<String, dynamic> pricingBody = {
+      'access_tier': (requestData['access_tier'] ?? requestData['accessTier'] ?? '').toString(),
+      'price': requestData['price'],
+      'currency': (requestData['currency'] ?? '').toString(),
+    };
+
+    // Remove pricing keys so they do not get treated as recipe_details columns.
+    requestData.remove('access_tier');
+    requestData.remove('accessTier');
+    requestData.remove('price');
+    requestData.remove('currency');
+
     Map<String, dynamic> response = {'status': 400};
     RecipeEntity? recipeEntity = RecipeEntity.fromJson(requestData);
     RecipeEntity? oldRecipe = await getRecipeFromUuid(recipeEntity.uuid, null, userId: userId);
@@ -855,6 +867,13 @@ class RecipeController {
       return Response(200, body: jsonEncode(response));
     }
     recipeEntity = await updateRecipeFn(oldRecipe, recipeEntity);
+    recipeEntity?.price = pricingBody['price'];
+    recipeEntity?.accessTier = pricingBody['access_tier'];
+    recipeEntity?.currency = pricingBody['currency'];
+    // ✅ Update pricing row if provided
+    if (hasPricingInRequest && recipeEntity != null && recipeEntity.id > 0) {
+      await _upsertRecipePricing(recipeId: recipeEntity.id, pricing: pricingBody);
+    }
     response['status'] = 200;
     response['message'] = 'Recipe updated successfully';
     response['data'] = recipeEntity?.toJson;
@@ -876,29 +895,20 @@ class RecipeController {
     if (resList.isEmpty) return null;
 
     final recipeModel = RecipeEntity.fromJson(resList.first);
-
+    final String accessTier = (pricing?['access_tier'] ?? 'FREE').toString().trim().toUpperCase();
+    final int price = parseInt(pricing?['price']);
+    final String currency = (pricing?['currency'] ?? '').toString().trim().toUpperCase();
     // ✅ Create pricing (optional)
     if (pricing != null) {
-      final String accessTier = (pricing['access_tier'] ?? 'FREE').toString().trim().toUpperCase();
-      final int price = parseInt(pricing['price']);
-      final String currency = (pricing['currency'] ?? 'INR').toString().trim().toUpperCase();
-
-      // If accessTier == PAID then price must be > 0 else keep FREE and price = 0
-      final String finalTier = (accessTier == 'PAID' && price <= 0) ? 'FREE' : accessTier;
-      final int finalPrice = (finalTier == 'PAID') ? price : 0;
-      final pricingInsert = Sql.named(
-        'INSERT INTO ${AppConfig.recipePricing} '
-        '(recipe_id, access_tier, price, currency, active, deleted, created_at, updated_at, uuid) '
-        'VALUES (@recipe_id, @access_tier, @price, @currency, true, false, now(), now(), @uuid)',
-      );
-
-      await connection.execute(pricingInsert, parameters: {'recipe_id': recipeModel.id, 'access_tier': finalTier, 'price': finalPrice, 'currency': currency, 'uuid': const Uuid().v8()});
+      _upsertRecipePricing(recipeId: recipeModel.id, pricing: pricing);
     }
 
     // Enrich category names
     final List<String> categoryList = await CategoryController.category.getCategoryNameListFromUuidList(recipeModel.categoryUuids ?? []);
     recipeModel.categoryName = categoryList;
-
+    recipeModel.price = price;
+    recipeModel.accessTier = accessTier;
+    recipeModel.currency = currency;
     return recipeModel;
   }
 
@@ -913,11 +923,10 @@ class RecipeController {
       newData: recipeEntity.toTableJson,
       // These are counters/flags derived from other tables or tracked separately.
       // Never allow client update calls to overwrite them.
-      ignoreParameters: ['recipe_image_urls', 'views', 'is_bookmarked', 'is_liked', 'liked_count', 'bookmarked_count'],
+      ignoreParameters: ['recipe_image_urls', 'views', 'is_bookmarked', 'is_liked', 'liked_count', 'bookmarked_count', 'access_tier', 'accessTier', 'price', 'currency'],
     );
     final query = updateQuery['query'] as String;
     final params = updateQuery['params'] as List<dynamic>;
-    DBFunctions.printSqlWithParams(query, params);
     final res = await connection.execute(Sql.named(query), parameters: params);
     var resList = DBFunctions.mapFromResultRow(res, keys) as List;
     if (resList.isNotEmpty) {
@@ -1083,5 +1092,53 @@ class RecipeController {
     final query = 'UPDATE ${AppConfig.recipeDetails} SET active = $active WHERE ${conditions.join(' AND ')}';
     final res = await connection.execute(Sql.named(query), parameters: params);
     return DBFunctions.mapFromResultRow(res, keys);
+  }
+
+  /// Upserts pricing for a recipe in `recipe_pricing`.
+  /// If no row exists, it creates one; otherwise it updates the existing row.
+  Future<void> _upsertRecipePricing({required int recipeId, required Map<String, dynamic> pricing}) async {
+    if (recipeId <= 0) return;
+    final String accessTierRaw = (pricing['access_tier'] ?? 'FREE').toString().trim();
+    final String accessTier = accessTierRaw.isEmpty ? 'FREE' : accessTierRaw.toUpperCase();
+    final int price = parseInt(pricing['price']);
+    final String currencyRaw = (pricing['currency'] ?? 'INR').toString().trim();
+    final String currency = currencyRaw.isEmpty ? 'INR' : currencyRaw.toUpperCase();
+
+    // If access_tier is PAID then price must be > 0 else keep FREE and price = 0
+    final String finalTier = (accessTier == 'PAID' && price <= 0) ? 'FREE' : accessTier;
+    final int finalPrice = price;
+
+    // Check if pricing row exists
+    final existing = await connection.execute(
+      Sql.named(
+        'SELECT id FROM ${AppConfig.recipePricing} '
+        'WHERE recipe_id = @recipe_id AND (deleted = false OR deleted IS NULL) '
+        'LIMIT 1',
+      ),
+      parameters: {'recipe_id': recipeId},
+    );
+
+    if (existing.isEmpty) {
+      // Insert new pricing row
+      await connection.execute(
+        Sql.named(
+          'INSERT INTO ${AppConfig.recipePricing} '
+          '(recipe_id, access_tier, price, currency, active, deleted, created_at, updated_at, uuid) '
+          'VALUES (@recipe_id, @access_tier, @price, @currency, true, false, now(), now(), @uuid)',
+        ),
+        parameters: {'recipe_id': recipeId, 'access_tier': finalTier, 'price': finalPrice, 'currency': currency, 'uuid': const Uuid().v8()},
+      );
+      return;
+    }
+
+    // Update existing pricing row
+    await connection.execute(
+      Sql.named(
+        'UPDATE ${AppConfig.recipePricing} '
+        'SET access_tier = @access_tier, price = @price, currency = @currency, updated_at = now() '
+        'WHERE recipe_id = @recipe_id AND (deleted = false OR deleted IS NULL)',
+      ),
+      parameters: {'recipe_id': recipeId, 'access_tier': finalTier, 'price': finalPrice, 'currency': currency},
+    );
   }
 }

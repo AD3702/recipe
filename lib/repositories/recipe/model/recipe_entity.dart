@@ -31,8 +31,8 @@ class RecipeEntity extends BaseEntity {
   String name;
   String accessTier;
   String currency;
-  bool isPurchased;
   int price;
+  bool isPurchased;
   double serving;
   int preparationTime;
   int cookTime;
@@ -85,7 +85,7 @@ class RecipeEntity extends BaseEntity {
     bookmarkedCount: parseInt(json['bookmarkedCount']),
     price: parseInt(json['price']),
     currency: json['currency'] ?? '',
-    accessTier: json['accessTier'] ?? '',
+    accessTier: json['access_tier'] ?? '',
     uuid: json['uuid'] ?? const Uuid().v8(),
     active: parseBool(json['active'], true),
     deleted: parseBool(json['deleted'], false),
