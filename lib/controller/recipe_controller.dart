@@ -818,15 +818,20 @@ class RecipeController {
   Future<Response> getDashboardDataForUser(String userUuid, int userId) async {
     final query =
         '''
-      SELECT
-        COALESCE(recipes, 0)   AS recipes,
-        COALESCE(liked, 0)     AS liked,
-        COALESCE(bookmark, 0)  AS bookmark,
-        COALESCE(views, 0)     AS views,
-        COALESCE(followers, 0) AS followers
-      FROM ${AppConfig.userDetails}
-      WHERE uuid = @user_uuid
-      LIMIT 1;
+SELECT
+  COALESCE((
+    SELECT COUNT(*)
+    FROM ${AppConfig.recipeDetails} rd
+    WHERE rd.user_uuid = ud.uuid
+      AND (rd.deleted = false OR rd.deleted IS NULL)
+  ), 0)                AS recipes,
+  COALESCE(ud.liked, 0)     AS liked,
+  COALESCE(ud.bookmark, 0)  AS bookmark,
+  COALESCE(ud.views, 0)     AS views,
+  COALESCE(ud.followers, 0) AS followers
+FROM ${AppConfig.userDetails} ud
+WHERE ud.uuid = @user_uuid
+LIMIT 1;
     ''';
 
     final res = await connection.execute(Sql.named(query), parameters: {'user_uuid': userUuid});

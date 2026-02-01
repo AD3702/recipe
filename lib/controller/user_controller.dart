@@ -219,21 +219,31 @@ class UserController {
     List<dynamic> finalParams;
     List<dynamic> finalCountParams;
     List<String> selectKeys = keys.map((e) => e).toList();
+    // Our SELECT puts `recipes` as the last column (computed), so ensure the mapping keys match that order.
+    final List<String> selectKeysForMapping = [...selectKeys.where((e) => e != 'recipes'), 'recipes'];
     if (isFollowing && viewerUserId != null) {
       // IMPORTANT: DBFunctions.buildConditions uses numeric placeholders (@0, @1, ...).
       // Append viewerUserId at the end and reference it by its numeric index.
       final int viewerParamIndex = params.length + suffixParams.length;
       final int viewerCountParamIndex = params.length;
 
-      // final prefixedConditions = _prefixConditionsWithAlias(conditions, 'ud', selectKeys);
-
+      // SELECT with recipes overridden by subquery
       query =
-          'SELECT ${selectKeys.map((e) => 'ud.$e').join(',')} '
-          'FROM ${AppConfig.userDetails} ud '
-          'INNER JOIN ${AppConfig.userFollowers} uf ON uf.user_following_id = ud.id '
-          'WHERE ${conditions.join(' AND ')} AND uf.user_id = @$viewerParamIndex'
-          '$shuffleOrderBy '
-          '$suffix';
+          '''
+SELECT
+  ${selectKeys.where((e) => e != 'recipes').map((e) => 'ud.$e').join(',')},
+  (
+    SELECT COUNT(*)::int
+    FROM ${AppConfig.recipeDetails} rd
+    WHERE rd.user_uuid = ud.uuid
+      AND (rd.deleted = false OR rd.deleted IS NULL)
+  ) AS recipes
+FROM ${AppConfig.userDetails} ud
+INNER JOIN ${AppConfig.userFollowers} uf ON uf.user_following_id = ud.id
+WHERE ${conditions.join(' AND ')} AND uf.user_id = @$viewerParamIndex
+$shuffleOrderBy
+$suffix
+''';
 
       countQuery =
           'SELECT COUNT(*) '
@@ -245,7 +255,20 @@ class UserController {
       finalCountParams = [...params, viewerUserId];
     } else {
       var isAdminApprovedQuery = !isShuffled ? "" : "  AND ud.is_admin_approved = true";
-      query = 'SELECT ${selectKeys.join(',')} FROM ${AppConfig.userDetails} ud WHERE ${conditions.join(' AND ')}$isAdminApprovedQuery$shuffleOrderBy $suffix';
+      // SELECT with recipes overridden by subquery
+      query =
+          '''
+SELECT
+  ${selectKeys.where((e) => e != 'recipes').map((e) => 'ud.$e').join(',')},
+  (
+    SELECT COUNT(*)::int
+    FROM ${AppConfig.recipeDetails} rd
+    WHERE rd.user_uuid = ud.uuid
+      AND (rd.deleted = false OR rd.deleted IS NULL)
+  ) AS recipes
+FROM ${AppConfig.userDetails} ud
+WHERE ${conditions.join(' AND ')}$isAdminApprovedQuery$shuffleOrderBy $suffix
+''';
       countQuery = 'SELECT COUNT(*) FROM ${AppConfig.userDetails} ud WHERE ${conditions.join(' AND ')}$isAdminApprovedQuery';
       finalParams = [...params, ...suffixParams];
       finalCountParams = [...params];
@@ -254,7 +277,7 @@ class UserController {
     final countRes = await connection.execute(Sql.named(countQuery), parameters: _paramsListToMap(finalCountParams));
     int totalCount = countRes.first.first as int;
     PaginationEntity paginationEntity = PaginationEntity(totalCount: totalCount, pageSize: pageSize ?? totalCount, pageNumber: pageNumber ?? 1);
-    var resList = DBFunctions.mapFromResultRow(res, selectKeys) as List;
+    var resList = DBFunctions.mapFromResultRow(res, selectKeysForMapping) as List;
     List<UserEntity> userList = [];
 
     // For every list response: add a `following` boolean indicating whether current viewer follows that user.
@@ -460,9 +483,22 @@ class UserController {
     final conditionData = DBFunctions.buildConditions({'uuid': uuid});
     final conditions = conditionData['conditions'] as List<String>;
     final params = conditionData['params'] as List<dynamic>;
-    final query = 'SELECT ${keys.join(',')} FROM ${AppConfig.userDetails} WHERE ${conditions.join(' AND ')}';
+    final query =
+        '''
+SELECT
+  ${keys.where((e) => e != 'recipes').map((e) => e).join(',')},
+  (
+    SELECT COUNT(*)::int
+    FROM ${AppConfig.recipeDetails} rd
+    WHERE rd.user_uuid = ${AppConfig.userDetails}.uuid
+      AND (rd.deleted = false OR rd.deleted IS NULL)
+  ) AS recipes
+FROM ${AppConfig.userDetails}
+WHERE ${conditions.join(' AND ')}
+''';
     final res = await connection.execute(Sql.named(query), parameters: _paramsListToMap(params));
-    var resList = DBFunctions.mapFromResultRow(res, keys) as List;
+    final List<String> keysForMapping = [...keys.where((e) => e != 'recipes'), 'recipes'];
+    var resList = DBFunctions.mapFromResultRow(res, keysForMapping) as List;
     if (resList.isNotEmpty) {
       return UserEntity.fromJson(resList.first);
     }
@@ -473,9 +509,22 @@ class UserController {
     final conditionData = DBFunctions.buildConditions({'id': id});
     final conditions = conditionData['conditions'] as List<String>;
     final params = conditionData['params'] as List<dynamic>;
-    final query = 'SELECT ${keys.join(',')} FROM ${AppConfig.userDetails} WHERE ${conditions.join(' AND ')}';
+    final query =
+        '''
+SELECT
+  ${keys.where((e) => e != 'recipes').map((e) => e).join(',')},
+  (
+    SELECT COUNT(*)::int
+    FROM ${AppConfig.recipeDetails} rd
+    WHERE rd.user_uuid = ${AppConfig.userDetails}.uuid
+      AND (rd.deleted = false OR rd.deleted IS NULL)
+  ) AS recipes
+FROM ${AppConfig.userDetails}
+WHERE ${conditions.join(' AND ')}
+''';
     final res = await connection.execute(Sql.named(query), parameters: _paramsListToMap(params));
-    var resList = DBFunctions.mapFromResultRow(res, keys) as List;
+    final List<String> keysForMapping = [...keys.where((e) => e != 'recipes'), 'recipes'];
+    var resList = DBFunctions.mapFromResultRow(res, keysForMapping) as List;
     if (resList.isNotEmpty) {
       return UserEntity.fromJson(resList.first);
     }
@@ -500,9 +549,22 @@ class UserController {
     final conditions = conditionData['conditions'] as List<String>;
     final params = conditionData['params'] as List<dynamic>;
 
-    final query = 'SELECT ${keys.join(',')} FROM ${AppConfig.userDetails} WHERE ${conditions.join(' AND ')}';
+    final query =
+        '''
+SELECT
+  ${keys.where((e) => e != 'recipes').map((e) => e).join(',')},
+  (
+    SELECT COUNT(*)::int
+    FROM ${AppConfig.recipeDetails} rd
+    WHERE rd.user_uuid = ${AppConfig.userDetails}.uuid
+      AND (rd.deleted = false OR rd.deleted IS NULL)
+  ) AS recipes
+FROM ${AppConfig.userDetails}
+WHERE ${conditions.join(' AND ')}
+''';
     final res = await connection.execute(Sql.named(query), parameters: _paramsListToMap(params));
-    var resList = DBFunctions.mapFromResultRow(res, keys) as List;
+    final List<String> keysForMapping = [...keys.where((e) => e != 'recipes'), 'recipes'];
+    var resList = DBFunctions.mapFromResultRow(res, keysForMapping) as List;
     if (resList.isNotEmpty) {
       return UserEntity.fromJson(resList.first);
     }
@@ -514,9 +576,22 @@ class UserController {
     final conditions = conditionData['conditions'] as List<String>;
     final params = conditionData['params'] as List<dynamic>;
 
-    final query = 'SELECT ${keys.join(',')} FROM ${AppConfig.userDetails} WHERE ${conditions.join(' AND ')}';
+    final query =
+        '''
+SELECT
+  ${keys.where((e) => e != 'recipes').map((e) => e).join(',')},
+  (
+    SELECT COUNT(*)::int
+    FROM ${AppConfig.recipeDetails} rd
+    WHERE rd.user_uuid = ${AppConfig.userDetails}.uuid
+      AND (rd.deleted = false OR rd.deleted IS NULL)
+  ) AS recipes
+FROM ${AppConfig.userDetails}
+WHERE ${conditions.join(' AND ')}
+''';
     final res = await connection.execute(Sql.named(query), parameters: _paramsListToMap(params));
-    var resList = DBFunctions.mapFromResultRow(res, keys) as List;
+    final List<String> keysForMapping = [...keys.where((e) => e != 'recipes'), 'recipes'];
+    var resList = DBFunctions.mapFromResultRow(res, keysForMapping) as List;
     if (resList.isNotEmpty) {
       return UserEntity.fromJson(resList.first);
     }
@@ -528,9 +603,22 @@ class UserController {
     final conditions = conditionData['conditions'] as List<String>;
     final params = conditionData['params'] as List<dynamic>;
 
-    final query = 'SELECT ${keys.join(',')} FROM ${AppConfig.userDetails} WHERE ${conditions.join(' AND ')}';
+    final query =
+        '''
+SELECT
+  ${keys.where((e) => e != 'recipes').map((e) => e).join(',')},
+  (
+    SELECT COUNT(*)::int
+    FROM ${AppConfig.recipeDetails} rd
+    WHERE rd.user_uuid = ${AppConfig.userDetails}.uuid
+      AND (rd.deleted = false OR rd.deleted IS NULL)
+  ) AS recipes
+FROM ${AppConfig.userDetails}
+WHERE ${conditions.join(' AND ')}
+''';
     final res = await connection.execute(Sql.named(query), parameters: _paramsListToMap(params));
-    var resList = DBFunctions.mapFromResultRow(res, keys) as List;
+    final List<String> keysForMapping = [...keys.where((e) => e != 'recipes'), 'recipes'];
+    var resList = DBFunctions.mapFromResultRow(res, keysForMapping) as List;
     if (resList.isNotEmpty) {
       return UserEntity.fromJson(resList.first);
     }
@@ -1158,13 +1246,23 @@ WITH
         'contact', ud.contact,
         'email', ud.email,
         'followers', COALESCE(ud.followers,0),
-        'recipes', COALESCE(ud.recipes,0),
+        'recipes', (
+          SELECT COUNT(*)::int
+          FROM recipes_src rd
+          WHERE rd.user_uuid = ud.uuid
+        ),
         'isAdminApproved', COALESCE(ud.is_admin_approved,false)
       ) AS x
       FROM users_src ud
       WHERE ud.active = true
         AND ud.user_type_u = 'COOK'
-      ORDER BY COALESCE(ud.followers,0) DESC, COALESCE(ud.recipes,0) DESC
+      ORDER BY
+        COALESCE(ud.followers,0) DESC,
+        (
+          SELECT COUNT(*)::int
+          FROM recipes_src rd
+          WHERE rd.user_uuid = ud.uuid
+        ) DESC
       LIMIT 10
     ) t
   )

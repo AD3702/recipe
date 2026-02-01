@@ -9,19 +9,6 @@ class MailController {
 
   static MailController mail = MailController._();
 
-  Future<void> sendEmail(List<String> toEmail, String subject, String body) async {
-    final smtpServer = SmtpServer('smtpout.secureserver.net', port: 587, username: AppConfig.superAdminEmail, password: 'jeTmof-pegcuc-7nejma', ignoreBadCertificate: true);
-    final message = Message()
-      ..from = Address(AppConfig.superAdminEmail, 'Recipe App')
-      ..recipients.addAll(toEmail)
-      ..subject = subject
-      ..html = body;
-
-    try {
-      await send(message, smtpServer);
-    } on MailerException catch (e) {
-    }
-  }
 
   Future<void> sendUserCreationSuccessfulEmail(List<String> toEmail, String name, String password) async {
     final smtpServer = SmtpServer('smtpout.secureserver.net', port: 587, username: AppConfig.superAdminEmail, password: 'jeTmof-pegcuc-7nejma', ignoreBadCertificate: true);
