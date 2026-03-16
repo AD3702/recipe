@@ -86,6 +86,9 @@ class BaseRepository {
     superAdminDashboard: {
       RequestType.GET: const <Object>[NeedLogin(adminOnly: true)],
     },
+    generateReport: {
+      RequestType.GET: const <Object>[NeedLogin(adminOnly: true)],
+    },
     toggleRecipeWishlist: {
       RequestType.PUT: const <Object>[NeedLogin()],
       RequestType.GET: const <Object>[NeedLogin()],
@@ -244,6 +247,7 @@ class BaseRepository {
   static const String profile = '/user/profile';
   static const String cookApproval = '/user/cook_approval';
   static const String superAdminDashboard = '/user/dashboard';
+  static const String generateReport = '/user/report';
   static const String userDocuments = '/user/documents';
   static const String userProfileImage = '/user/profile/image';
   static const String userDelete = '/user/delete';

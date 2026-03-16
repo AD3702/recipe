@@ -1,5 +1,9 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
+import 'package:intl/intl.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 import 'package:postgres/postgres.dart';
 import 'package:recipe/controller/auth_controller.dart';
 import 'package:recipe/controller/mail_controller.dart';
@@ -120,22 +124,7 @@ class UserController {
     // ------------------------------
 
     // Whitelist filters (anything else in requestBody is ignored)
-    const filterable = <String>{
-      'id',
-      'uuid',
-      'active',
-      'deleted',
-      'created_at',
-      'updated_at',
-      'user_type',
-      'name',
-      'email',
-      'contact',
-      'user_name',
-      'is_contact_verified',
-      'is_email_verified',
-      'is_admin_approved',
-    };
+    const filterable = <String>{'id', 'uuid', 'active', 'deleted', 'created_at', 'updated_at', 'user_type', 'name', 'email', 'contact', 'user_name', 'is_contact_verified', 'is_email_verified', 'is_admin_approved'};
 
     final conditions = <String>[];
     final params = <dynamic>[];
@@ -194,10 +183,10 @@ class UserController {
     if (searchKeyword != null && searchKeyword.isNotEmpty) {
       final int idx = params.length;
       conditions.add(
-        '(ud.name ILIKE @${idx} '
-        'OR ud.email ILIKE @${idx} '
-        'OR ud.user_name ILIKE @${idx} '
-        'OR ud.contact ILIKE @${idx})',
+        '(ud.name ILIKE @$idx '
+        'OR ud.email ILIKE @$idx '
+        'OR ud.user_name ILIKE @$idx '
+        'OR ud.contact ILIKE @$idx)',
       );
       params.add('%$searchKeyword%');
     }
@@ -320,19 +309,16 @@ WHERE ${conditions.join(' AND ')}$isAdminApprovedQuery$shuffleOrderBy $suffix
       // Add `following` boolean for every item (does viewer follow this user?)
       Set<int> followingIds = <int>{};
       try {
-        final ids = userList.$1.map((e) => e.id ?? 0).where((e) => e > 0).toList();
+        final ids = userList.$1.map((e) => e.id).where((e) => e > 0).toList();
         if (ids.isNotEmpty) {
-          final fRes = await connection.execute(
-            Sql.named('SELECT user_following_id FROM ${AppConfig.userFollowers} WHERE user_id = @0 AND user_following_id = ANY(@1)'),
-            parameters: _paramsListToMap([userId, ids]),
-          );
+          final fRes = await connection.execute(Sql.named('SELECT user_following_id FROM ${AppConfig.userFollowers} WHERE user_id = @0 AND user_following_id = ANY(@1)'), parameters: _paramsListToMap([userId, ids]));
           followingIds = fRes.map((r) => (r.first as int?) ?? 0).where((e) => e > 0).toSet();
         }
       } catch (_) {}
 
       response['data'] = userList.$1.map((e) {
         final m = e.toJson;
-        m['following'] = followingIds.contains(e.id ?? -1);
+        m['following'] = followingIds.contains(e.id);
         return m;
       }).toList();
       response['pagination'] = userList.$2.toJson;
@@ -416,7 +402,7 @@ WHERE ${conditions.join(' AND ')}$isAdminApprovedQuery$shuffleOrderBy $suffix
     } else {
       var responseJson = userResponse.toJson;
       // Subscription snapshot (premium/category/start/end)
-      final int profileUserId = userResponse.id ?? 0;
+      final int profileUserId = userResponse.id;
       if (profileUserId > 0) {
         responseJson['subscription'] = await _getUserSubscriptionSnapshot(profileUserId);
       } else {
@@ -435,10 +421,7 @@ WHERE ${conditions.join(' AND ')}$isAdminApprovedQuery$shuffleOrderBy $suffix
       bool isFollowingUser = false;
       if (userId != null) {
         try {
-          final fr = await connection.execute(
-            Sql.named('SELECT 1 FROM ${AppConfig.userFollowers} WHERE user_id = @0 AND user_following_id = @1 LIMIT 1'),
-            parameters: _paramsListToMap([userId, userResponse.id]),
-          );
+          final fr = await connection.execute(Sql.named('SELECT 1 FROM ${AppConfig.userFollowers} WHERE user_id = @0 AND user_following_id = @1 LIMIT 1'), parameters: _paramsListToMap([userId, userResponse.id]));
           isFollowingUser = fr.isNotEmpty;
         } catch (_) {}
       }
@@ -730,16 +713,7 @@ WHERE ${conditions.join(' AND ')}
     if (multipartResponse is Response) {
       return multipartResponse;
     }
-    final doc = UserDocumentsModel(
-      uuid: const Uuid().v8(),
-      active: true,
-      deleted: false,
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
-      userId: userId,
-      filePath: multipartResponse,
-      documentType: documentType,
-    );
+    final doc = UserDocumentsModel(uuid: const Uuid().v8(), active: true, deleted: false, createdAt: DateTime.now(), updatedAt: DateTime.now(), userId: userId, filePath: multipartResponse, documentType: documentType);
     var userDocuments = await getUserDocumentsFromId(userId);
     if (userDocuments != null) {
       // Update existing document record
@@ -748,7 +722,7 @@ WHERE ${conditions.join(' AND ')}
       final params = conditionData['params'] as List<dynamic>;
 
       final updateData = {'file_path': multipartResponse, 'updated_at': DateTime.now().toIso8601String()};
-      final setClauses = updateData.keys.map((key) => '$key = @${key}').toList();
+      final setClauses = updateData.keys.map((key) => '$key = @$key').toList();
       final updateParams = updateData.values.toList();
 
       final query = 'UPDATE ${AppConfig.cookVerificationDocuments} SET ${setClauses.join(', ')} WHERE ${conditions.join(' AND ')}';
@@ -899,13 +873,7 @@ WHERE ${conditions.join(' AND ')}
       // Return latest user row
       final updatedUser = await getUserFromId(userId);
 
-      return Response.ok(
-        jsonEncode({
-          'status': 200,
-          'message': isAdminApproved ? 'User approved successfully' : (isRejected ? 'User rejected successfully' : 'User admin approval updated successfully'),
-          'data': updatedUser?.toJson,
-        }),
-      );
+      return Response.ok(jsonEncode({'status': 200, 'message': isAdminApproved ? 'User approved successfully' : (isRejected ? 'User rejected successfully' : 'User admin approval updated successfully'), 'data': updatedUser?.toJson}));
     } catch (e) {
       return Response.internalServerError(body: jsonEncode({'status': 500, 'message': 'Failed to update user approval', 'error': e.toString()}));
     }
@@ -986,321 +954,798 @@ WHERE ${conditions.join(' AND ')}
     }
   }
 
-  /// SUPER ADMIN DASHBOARD
-  ///
-  /// Returns aggregated stats for admin dashboard.
-  /// Optional requestBody supports:
-  /// - from: ISO string (inclusive)
-  /// - to: ISO string (inclusive)
-  /// If not provided, default is last 30 days for trend buckets.
   Future<Response> getSuperAdminDashboard({Map<String, dynamic>? requestBody}) async {
-    DateTime _parseDt(dynamic v) {
-      if (v == null) return DateTime.now();
+    DateTime _parseDt(dynamic v, DateTime fallback) {
+      if (v == null) return fallback;
       if (v is DateTime) return v;
       final s = v.toString().trim();
-      if (s.isEmpty) return DateTime.now();
+      if (s.isEmpty) return fallback;
       try {
         return DateTime.parse(s);
       } catch (_) {
-        return DateTime.now();
+        return fallback;
       }
     }
 
     final now = DateTime.now();
-    final DateTime toDt = _parseDt(requestBody?['to'] ?? now.toIso8601String());
-    final DateTime fromDt = _parseDt(requestBody?['from'] ?? now.subtract(const Duration(days: 30)).toIso8601String());
+    final bool hasFrom = requestBody?['from'] != null && requestBody!['from'].toString().trim().isNotEmpty;
+    final bool hasTo = requestBody?['to'] != null && requestBody!['to'].toString().trim().isNotEmpty;
 
-    // Keep sane ordering
-    final DateTime from = fromDt.isAfter(toDt) ? toDt.subtract(const Duration(days: 30)) : fromDt;
-    final DateTime to = toDt;
+    final DateTime parsedFrom = hasFrom ? _parseDt(requestBody['from'], DateTime.utc(1970, 1, 1)) : DateTime.utc(1970, 1, 1);
+    final DateTime parsedTo = hasTo ? _parseDt(requestBody['to'], now) : now;
 
-    // We cast created_at from text to timestamptz in SQL, so pass timestamptz params.
-    final fromUtc = from.toUtc();
-    final toUtc = to.toUtc();
+    final DateTime from = parsedFrom.isAfter(parsedTo) ? parsedTo.subtract(const Duration(days: 30)) : parsedFrom;
+    final DateTime to = parsedTo;
 
-    // NOTE: created_at columns in your DB appear to be stored as TEXT, so we use:
-    // NULLIF(col::text,'')::timestamptz
-    // This avoids date_trunc/type errors and compares as real timestamps.
-    const String q = r'''
+    final DateTime fromUtc = from.toUtc();
+    final DateTime toUtc = to.toUtc();
+
+    final String q =
+        '''
 WITH
-  range AS (
+  range_cte AS (
     SELECT @0::timestamptz AS from_ts, @1::timestamptz AS to_ts
   ),
 
   users_src AS (
     SELECT
-      ud.*,
-      UPPER(COALESCE(ud.user_type,'USER')) AS user_type_u,
-      NULLIF(ud.created_at::text,'')::timestamptz AS created_ts
-    FROM user_details ud
+      ud.id,
+      ud.uuid,
+      ud.name,
+      ud.user_name,
+      ud.contact,
+      ud.email,
+      COALESCE(ud.active, false) AS active,
+      COALESCE(ud.deleted, false) AS deleted,
+      COALESCE(ud.followers, 0) AS followers,
+      COALESCE(ud.is_admin_approved, false) AS is_admin_approved,
+      UPPER(COALESCE(ud.user_type, 'USER')) AS user_type_u,
+      NULLIF(ud.created_at::text, '')::timestamptz AS created_ts
+    FROM ${AppConfig.userDetails} ud
     WHERE (ud.deleted = false OR ud.deleted IS NULL)
   ),
 
   recipes_src AS (
     SELECT
-      rd.*,
-      NULLIF(rd.created_at::text,'')::timestamptz AS created_ts
-    FROM recipe_details rd
+      rd.id,
+      rd.uuid,
+      rd.name,
+      rd.user_uuid,
+      rd.category_uuid,
+      COALESCE(rd.active, false) AS active,
+      COALESCE(rd.deleted, false) AS deleted,
+      COALESCE(rd.views, 0) AS views,
+      COALESCE(rd.liked_count, 0) AS liked_count,
+      COALESCE(rd.bookmarked_count, 0) AS bookmarked_count,
+      NULLIF(rd.created_at::text, '')::timestamptz AS created_ts
+    FROM ${AppConfig.recipeDetails} rd
     WHERE (rd.deleted = false OR rd.deleted IS NULL)
   ),
 
   subs_src AS (
     SELECT
-      us.*,
-      NULLIF(us.created_at::text,'')::timestamptz AS created_ts
-    FROM user_subscriptions us
+      us.id,
+      us.uuid,
+      us.user_id,
+      COALESCE(us.recipe_id, 0) AS recipe_id,
+      us.plan_code,
+      us.status,
+      us.currency,
+      us.payment_provider,
+      us.provider_payment_id,
+      us.provider_subscription_id,
+      COALESCE(us.amount_paid, 0) AS amount_paid,
+      COALESCE(us.active, false) AS active,
+      NULLIF(us.created_at::text, '')::timestamptz AS created_ts,
+      NULLIF(us.start_at::text, '')::timestamptz AS start_ts,
+      NULLIF(us.end_at::text, '')::timestamptz AS end_ts,
+      us.created_at
+    FROM ${AppConfig.userSubscriptions} us
     WHERE (us.deleted = false OR us.deleted IS NULL)
   ),
 
-  users_agg AS (
+  users_in_range AS (
+    SELECT *
+    FROM users_src
+    WHERE created_ts >= (SELECT from_ts FROM range_cte)
+      AND created_ts <= (SELECT to_ts FROM range_cte)
+  ),
+
+  recipes_in_range AS (
+    SELECT *
+    FROM recipes_src
+    WHERE created_ts >= (SELECT from_ts FROM range_cte)
+      AND created_ts <= (SELECT to_ts FROM range_cte)
+  ),
+
+  subs_in_range AS (
+    SELECT *
+    FROM subs_src
+    WHERE created_ts >= (SELECT from_ts FROM range_cte)
+      AND created_ts <= (SELECT to_ts FROM range_cte)
+  ),
+
+  recipe_counts_by_user AS (
+    SELECT rd.user_uuid, COUNT(*)::int AS recipe_count
+    FROM recipes_in_range rd
+    GROUP BY rd.user_uuid
+  ),
+
+  recipe_purchase_stats AS (
+    SELECT
+      ss.recipe_id,
+      COUNT(*)::int AS purchase_count,
+      COALESCE(SUM(ss.amount_paid), 0)::int AS purchase_revenue
+    FROM subs_in_range ss
+    WHERE ss.recipe_id <> 0
+      AND (
+        ss.provider_payment_id IS NOT NULL
+        OR ss.provider_subscription_id IS NOT NULL
+        OR UPPER(COALESCE(ss.payment_provider, '')) = 'SUPER_ADMIN'
+      )
+    GROUP BY ss.recipe_id
+  ),
+
+  recipe_stats AS (
+    SELECT
+      rd.id,
+      rd.uuid,
+      rd.name,
+      rd.user_uuid,
+      rd.category_uuid,
+      rd.views,
+      rd.liked_count,
+      rd.bookmarked_count,
+      COALESCE(rps.purchase_count, 0) AS purchase_count,
+      COALESCE(rps.purchase_revenue, 0) AS purchase_revenue,
+      ROUND((rd.views * 1.0 + rd.liked_count * 2.0 + rd.bookmarked_count * 1.5 + COALESCE(rps.purchase_count, 0) * 3.0)::numeric, 2) AS performance_score
+    FROM recipes_in_range rd
+    LEFT JOIN recipe_purchase_stats rps ON rps.recipe_id = rd.id
+  ),
+
+  cook_stats AS (
+    SELECT
+      ud.id,
+      ud.uuid,
+      ud.name,
+      ud.user_name,
+      ud.contact,
+      ud.email,
+      COALESCE(ud.followers, 0) AS followers,
+      COALESCE(ud.is_admin_approved, false) AS is_admin_approved,
+      COALESCE(rc.recipe_count, 0) AS recipes,
+      COALESCE(SUM(rs.views), 0)::int AS total_views,
+      COALESCE(SUM(rs.liked_count), 0)::int AS total_likes,
+      COALESCE(SUM(rs.bookmarked_count), 0)::int AS total_bookmarks,
+      COALESCE(SUM(rs.purchase_count), 0)::int AS total_purchases,
+      COALESCE(SUM(rs.purchase_revenue), 0)::int AS total_purchase_revenue,
+      ROUND((COALESCE(ud.followers, 0) * 2.0 + COALESCE(rc.recipe_count, 0) * 3.0 + COALESCE(SUM(rs.views), 0) * 0.5 + COALESCE(SUM(rs.liked_count), 0) * 2.0 + COALESCE(SUM(rs.purchase_count), 0) * 3.0)::numeric, 2) AS performance_score
+    FROM users_in_range ud
+    LEFT JOIN recipe_counts_by_user rc ON rc.user_uuid = ud.uuid
+    LEFT JOIN recipe_stats rs ON rs.user_uuid = ud.uuid
+    WHERE ud.active = true
+      AND ud.user_type_u = 'COOK'
+    GROUP BY
+      ud.id,
+      ud.uuid,
+      ud.name,
+      ud.user_name,
+      ud.contact,
+      ud.email,
+      ud.followers,
+      ud.is_admin_approved,
+      rc.recipe_count
+  ),
+
+  users_summary AS (
     SELECT
       COUNT(*)::int AS total,
       COUNT(*) FILTER (WHERE active = true)::int AS active,
       COUNT(*) FILTER (WHERE user_type_u = 'COOK')::int AS total_cooks,
       COUNT(*) FILTER (
         WHERE user_type_u = 'COOK'
-          AND COALESCE(is_admin_approved,false) = false
           AND active = true
+          AND COALESCE(is_admin_approved, false) = false
       )::int AS pending_cook_approvals,
-      COUNT(*) FILTER (
-        WHERE created_ts >= (SELECT from_ts FROM range)
-          AND created_ts <= (SELECT to_ts FROM range)
-      )::int AS new_in_range
-    FROM users_src
+      COUNT(*)::int AS new_in_range
+    FROM users_in_range
   ),
 
-  users_by_type AS (
-    SELECT jsonb_agg(x ORDER BY (x->>'count')::int DESC) AS data
-    FROM (
-      SELECT jsonb_build_object(
-        'userType', ut,
-        'count', cnt
-      ) AS x
-      FROM (
-        SELECT ud.user_type_u AS ut, COUNT(*)::int AS cnt
-        FROM users_src ud
-        GROUP BY ud.user_type_u
-      ) s
-    ) t
-  ),
-
-  signup_trend AS (
-    SELECT jsonb_agg(x ORDER BY x->>'day') AS data
-    FROM (
-      SELECT jsonb_build_object(
-        'day', to_char(d, 'YYYY-MM-DD'),
-        'count', cnt
-      ) AS x
-      FROM (
-        SELECT date_trunc('day', ud.created_ts) AS d, COUNT(*)::int AS cnt
-        FROM users_src ud, range r
-        WHERE ud.created_ts >= r.from_ts
-          AND ud.created_ts <= r.to_ts
-        GROUP BY date_trunc('day', ud.created_ts)
-      ) s
-    ) t
-  ),
-
-  recipes_agg AS (
+  recipes_summary AS (
     SELECT
       COUNT(*)::int AS total,
       COUNT(*) FILTER (WHERE active = true)::int AS active,
-      COUNT(*) FILTER (
-        WHERE created_ts >= (SELECT from_ts FROM range)
-          AND created_ts <= (SELECT to_ts FROM range)
-      )::int AS new_in_range,
-      (SELECT COALESCE(SUM(COALESCE(rv.times,0)),0)::int FROM recipe_views rv)::int AS total_views,
-      (SELECT COUNT(*) FROM recipe_wishlist rw)::int AS wishlist_count,
-      (SELECT COUNT(*) FROM recipe_bookmark rb)::int AS bookmark_count
-    FROM recipes_src
+      COUNT(*)::int AS new_in_range
+    FROM recipes_in_range
   ),
 
-  category_distribution AS (
-    SELECT jsonb_agg(x ORDER BY (x->>'count')::int DESC) AS data
-    FROM (
-      SELECT jsonb_build_object(
-        'category', cat,
-        'count', cnt
-      ) AS x
-      FROM (
-        SELECT COALESCE(cd.name,'Unknown') AS cat, COUNT(*)::int AS cnt
-        FROM recipes_src rd
-        LEFT JOIN category_details cd ON cd.uuid = rd.category_uuid
-        GROUP BY COALESCE(cd.name,'Unknown')
-        ORDER BY COUNT(*) DESC
-        LIMIT 15
-      ) s
-    ) t
-  ),
-
-  top_recipes AS (
-    SELECT jsonb_agg(x) AS data
-    FROM (
-      SELECT jsonb_build_object(
-        'id', rd.id,
-        'uuid', rd.uuid,
-        'name', rd.name,
-        'views', COALESCE(rd.views,0),
-        'likedCount', COALESCE(rd.liked_count,0),
-        'bookmarkedCount', COALESCE(rd.bookmarked_count,0),
-        'userUuid', rd.user_uuid,
-        'categoryUuid', rd.category_uuid
-      ) AS x
-      FROM recipes_src rd
-      ORDER BY COALESCE(rd.views,0) DESC, COALESCE(rd.liked_count,0) DESC
-      LIMIT 10
-    ) t
-  ),
-
-  revenue_agg AS (
+  engagement_summary AS (
     SELECT
-      COALESCE(SUM(COALESCE(amount_paid,0)) FILTER (
-        WHERE created_ts >= (SELECT from_ts FROM range)
-          AND created_ts <= (SELECT to_ts FROM range)
-          AND (provider_payment_id IS NOT NULL OR provider_subscription_id IS NOT NULL)
+      COALESCE((
+        SELECT SUM(COALESCE(rv.times, 0))::bigint
+        FROM recipe_views rv
+        WHERE NULLIF(rv.created_at::text, '')::timestamptz >= (SELECT from_ts FROM range_cte)
+          AND NULLIF(rv.created_at::text, '')::timestamptz <= (SELECT to_ts FROM range_cte)
+      ), 0)::int AS total_views,
+      COALESCE((
+        SELECT COUNT(*)::bigint
+        FROM recipe_wishlist rw
+        WHERE NULLIF(rw.created_at::text, '')::timestamptz >= (SELECT from_ts FROM range_cte)
+          AND NULLIF(rw.created_at::text, '')::timestamptz <= (SELECT to_ts FROM range_cte)
+      ), 0)::int AS wishlist_count,
+      COALESCE((
+        SELECT COUNT(*)::bigint
+        FROM recipe_bookmark rb
+        WHERE NULLIF(rb.created_at::text, '')::timestamptz >= (SELECT from_ts FROM range_cte)
+          AND NULLIF(rb.created_at::text, '')::timestamptz <= (SELECT to_ts FROM range_cte)
+      ), 0)::int AS bookmark_count,
+      COALESCE((SELECT SUM(purchase_count)::bigint FROM recipe_purchase_stats), 0)::int AS total_recipe_purchases,
+      COALESCE((SELECT SUM(purchase_revenue)::bigint FROM recipe_purchase_stats), 0)::int AS total_recipe_purchase_revenue
+  ),
+
+  revenue_summary AS (
+    SELECT
+      COALESCE(SUM(amount_paid) FILTER (
+        WHERE (provider_payment_id IS NOT NULL OR provider_subscription_id IS NOT NULL OR UPPER(COALESCE(payment_provider, '')) = 'SUPER_ADMIN')
       ), 0)::int AS total_in_range,
-
-      COALESCE(SUM(COALESCE(amount_paid,0)) FILTER (
-        WHERE created_ts >= (SELECT from_ts FROM range)
-          AND created_ts <= (SELECT to_ts FROM range)
-          AND COALESCE(recipe_id,0) = 0
-          AND (provider_payment_id IS NOT NULL OR provider_subscription_id IS NOT NULL)
+      COALESCE(SUM(amount_paid) FILTER (
+        WHERE recipe_id = 0
+          AND (provider_payment_id IS NOT NULL OR provider_subscription_id IS NOT NULL OR UPPER(COALESCE(payment_provider, '')) = 'SUPER_ADMIN')
       ), 0)::int AS subscription_in_range,
+      COALESCE(SUM(amount_paid) FILTER (
+        WHERE recipe_id <> 0
+          AND (provider_payment_id IS NOT NULL OR provider_subscription_id IS NOT NULL OR UPPER(COALESCE(payment_provider, '')) = 'SUPER_ADMIN')
+      ), 0)::int AS recipe_in_range,
+      COUNT(*) FILTER (
+        WHERE (provider_payment_id IS NOT NULL OR provider_subscription_id IS NOT NULL OR UPPER(COALESCE(payment_provider, '')) = 'SUPER_ADMIN')
+      )::int AS paid_transactions_in_range
+    FROM subs_in_range
+  ),
 
-      COALESCE(SUM(COALESCE(amount_paid,0)) FILTER (
-        WHERE created_ts >= (SELECT from_ts FROM range)
-          AND created_ts <= (SELECT to_ts FROM range)
-          AND COALESCE(recipe_id,0) <> 0
-          AND (provider_payment_id IS NOT NULL OR provider_subscription_id IS NOT NULL)
-      ), 0)::int AS recipe_in_range
-    FROM subs_src
+  user_type_distribution AS (
+    SELECT COALESCE(
+      jsonb_agg(
+        jsonb_build_object(
+          'userType', user_type_u,
+          'count', cnt
+        )
+        ORDER BY cnt DESC, user_type_u ASC
+      ),
+      '[]'::jsonb
+    ) AS data
+    FROM (
+      SELECT user_type_u, COUNT(*)::int AS cnt
+      FROM users_in_range
+      GROUP BY user_type_u
+    ) s
+  ),
+
+  signup_trend AS (
+    SELECT COALESCE(
+      jsonb_agg(
+        jsonb_build_object(
+          'day', to_char(day_bucket, 'YYYY-MM-DD'),
+          'count', cnt
+        )
+        ORDER BY day_bucket ASC
+      ),
+      '[]'::jsonb
+    ) AS data
+    FROM (
+      SELECT date_trunc('day', created_ts) AS day_bucket, COUNT(*)::int AS cnt
+      FROM users_in_range
+      GROUP BY 1
+    ) s
+  ),
+
+  recipe_trend AS (
+    SELECT COALESCE(
+      jsonb_agg(
+        jsonb_build_object(
+          'day', to_char(day_bucket, 'YYYY-MM-DD'),
+          'count', cnt
+        )
+        ORDER BY day_bucket ASC
+      ),
+      '[]'::jsonb
+    ) AS data
+    FROM (
+      SELECT date_trunc('day', created_ts) AS day_bucket, COUNT(*)::int AS cnt
+      FROM recipes_in_range
+      GROUP BY 1
+    ) s
   ),
 
   revenue_trend AS (
-    SELECT jsonb_agg(x ORDER BY x->>'day') AS data
+    SELECT COALESCE(
+      jsonb_agg(
+        jsonb_build_object(
+          'day', to_char(day_bucket, 'YYYY-MM-DD'),
+          'revenue', revenue,
+          'transactions', tx_count
+        )
+        ORDER BY day_bucket ASC
+      ),
+      '[]'::jsonb
+    ) AS data
     FROM (
-      SELECT jsonb_build_object(
-        'day', to_char(d, 'YYYY-MM-DD'),
-        'revenue', rev
-      ) AS x
-      FROM (
-        SELECT date_trunc('day', us.created_ts) AS d,
-               COALESCE(SUM(COALESCE(us.amount_paid,0)),0)::int AS rev
-        FROM subs_src us, range r
-        WHERE us.created_ts >= r.from_ts
-          AND us.created_ts <= r.to_ts
-          AND (us.provider_payment_id IS NOT NULL OR us.provider_subscription_id IS NOT NULL)
-        GROUP BY date_trunc('day', us.created_ts)
-      ) s
-    ) t
+      SELECT
+        date_trunc('day', created_ts) AS day_bucket,
+        COALESCE(SUM(amount_paid), 0)::int AS revenue,
+        COUNT(*)::int AS tx_count
+      FROM subs_in_range
+      WHERE (provider_payment_id IS NOT NULL OR provider_subscription_id IS NOT NULL OR UPPER(COALESCE(payment_provider, '')) = 'SUPER_ADMIN')
+      GROUP BY 1
+    ) s
   ),
 
-  recent_transactions AS (
-    SELECT jsonb_agg(x) AS data
+  category_distribution AS (
+    SELECT COALESCE(
+      jsonb_agg(
+        jsonb_build_object(
+          'category', category_name,
+          'count', cnt
+        )
+        ORDER BY cnt DESC, category_name ASC
+      ),
+      '[]'::jsonb
+    ) AS data
     FROM (
-      SELECT jsonb_build_object(
-        'id', us.id,
-        'uuid', us.uuid,
-        'userId', us.user_id,
-        'planCode', us.plan_code,
-        'amountPaid', COALESCE(us.amount_paid,0),
-        'currency', us.currency,
-        'paymentProvider', us.payment_provider,
-        'providerPaymentId', us.provider_payment_id,
-        'providerSubscriptionId', us.provider_subscription_id,
-        'recipeId', COALESCE(us.recipe_id,0),
-        'status', us.status,
-        'createdAt', us.created_at
-      ) AS x
-      FROM subs_src us
-      ORDER BY us.created_ts DESC NULLS LAST
-      LIMIT 20
-    ) t
+      SELECT COALESCE(cd.name, 'Unknown') AS category_name, COUNT(*)::int AS cnt
+      FROM recipes_in_range rd
+      LEFT JOIN category_details cd ON cd.uuid = rd.category_uuid
+      GROUP BY COALESCE(cd.name, 'Unknown')
+      ORDER BY COUNT(*) DESC, COALESCE(cd.name, 'Unknown') ASC
+      LIMIT 15
+    ) s
   ),
 
   active_plan_distribution AS (
-    SELECT jsonb_agg(x ORDER BY (x->>'count')::int DESC) AS data
+    SELECT COALESCE(
+      jsonb_agg(
+        jsonb_build_object(
+          'planCode', plan_code_u,
+          'count', cnt
+        )
+        ORDER BY cnt DESC, plan_code_u ASC
+      ),
+      '[]'::jsonb
+    ) AS data
     FROM (
-      SELECT jsonb_build_object(
-        'planCode', pc,
-        'count', cnt
-      ) AS x
-      FROM (
-        SELECT UPPER(COALESCE(us.plan_code,'')) AS pc, COUNT(*)::int AS cnt
-        FROM subs_src us
-        WHERE COALESCE(us.recipe_id,0) = 0
-          AND UPPER(COALESCE(us.status,'')) = 'ACTIVE'
-        GROUP BY UPPER(COALESCE(us.plan_code,''))
-      ) s
-    ) t
+      SELECT UPPER(COALESCE(plan_code, 'UNKNOWN')) AS plan_code_u, COUNT(*)::int AS cnt
+      FROM subs_in_range
+      WHERE recipe_id = 0
+        AND UPPER(COALESCE(status, '')) = 'ACTIVE'
+        AND (
+          provider_payment_id IS NOT NULL
+          OR provider_subscription_id IS NOT NULL
+          OR UPPER(COALESCE(payment_provider, '')) = 'SUPER_ADMIN'
+        )
+      GROUP BY 1
+    ) s
+  ),
+
+  recent_transactions AS (
+    SELECT COALESCE(
+      jsonb_agg(tx ORDER BY created_ts_sort DESC NULLS LAST),
+      '[]'::jsonb
+    ) AS data
+    FROM (
+      SELECT
+        created_ts AS created_ts_sort,
+        jsonb_build_object(
+          'id', id,
+          'uuid', uuid,
+          'userId', user_id,
+          'planCode', plan_code,
+          'amountPaid', amount_paid,
+          'currency', currency,
+          'paymentProvider', payment_provider,
+          'providerPaymentId', provider_payment_id,
+          'providerSubscriptionId', provider_subscription_id,
+          'recipeId', recipe_id,
+          'status', status,
+          'createdAt', created_at
+        ) AS tx
+      FROM subs_in_range
+      WHERE provider_payment_id IS NOT NULL
+         OR provider_subscription_id IS NOT NULL
+         OR UPPER(COALESCE(payment_provider, '')) = 'SUPER_ADMIN'
+      ORDER BY created_ts DESC NULLS LAST
+      LIMIT 20
+    ) s
+  ),
+
+  top_recipes AS (
+    SELECT COALESCE(
+      jsonb_agg(recipe_row ORDER BY performance_score DESC, views DESC, liked_count DESC, purchase_count DESC),
+      '[]'::jsonb
+    ) AS data
+    FROM (
+      SELECT
+        performance_score,
+        views,
+        liked_count,
+        purchase_count,
+        jsonb_build_object(
+          'id', id,
+          'uuid', uuid,
+          'name', name,
+          'views', views,
+          'likedCount', liked_count,
+          'bookmarkedCount', bookmarked_count,
+          'purchaseCount', purchase_count,
+          'purchaseRevenue', purchase_revenue,
+          'userUuid', user_uuid,
+          'categoryUuid', category_uuid,
+          'score', performance_score
+        ) AS recipe_row
+      FROM recipe_stats
+      ORDER BY performance_score DESC, views DESC, liked_count DESC, purchase_count DESC
+      LIMIT 10
+    ) s
   ),
 
   top_cooks AS (
-    SELECT jsonb_agg(x) AS data
+    SELECT COALESCE(
+      jsonb_agg(cook_row ORDER BY performance_score DESC, followers DESC, recipes DESC),
+      '[]'::jsonb
+    ) AS data
     FROM (
-      SELECT jsonb_build_object(
-        'id', ud.id,
-        'uuid', ud.uuid,
-        'name', ud.name,
-        'userName', ud.user_name,
-        'contact', ud.contact,
-        'email', ud.email,
-        'followers', COALESCE(ud.followers,0),
-        'recipes', (
-          SELECT COUNT(*)::int
-          FROM recipes_src rd
-          WHERE rd.user_uuid = ud.uuid
-        ),
-        'isAdminApproved', COALESCE(ud.is_admin_approved,false)
-      ) AS x
-      FROM users_src ud
-      WHERE ud.active = true
-        AND ud.user_type_u = 'COOK'
-      ORDER BY
-        COALESCE(ud.followers,0) DESC,
-        (
-          SELECT COUNT(*)::int
-          FROM recipes_src rd
-          WHERE rd.user_uuid = ud.uuid
-        ) DESC
+      SELECT
+        performance_score,
+        followers,
+        recipes,
+        jsonb_build_object(
+          'id', id,
+          'uuid', uuid,
+          'name', name,
+          'userName', user_name,
+          'contact', contact,
+          'email', email,
+          'followers', followers,
+          'recipes', recipes,
+          'totalViews', total_views,
+          'totalLikes', total_likes,
+          'totalBookmarks', total_bookmarks,
+          'totalPurchases', total_purchases,
+          'totalPurchaseRevenue', total_purchase_revenue,
+          'isAdminApproved', is_admin_approved,
+          'score', performance_score
+        ) AS cook_row
+      FROM cook_stats
+      ORDER BY performance_score DESC, followers DESC, recipes DESC
       LIMIT 10
-    ) t
+    ) s
+  ),
+
+  recipe_views_graph AS (
+    SELECT COALESCE(
+      jsonb_agg(
+        jsonb_build_object(
+          'id', id,
+          'uuid', uuid,
+          'name', name,
+          'value', views
+        )
+        ORDER BY views DESC, name ASC
+      ),
+      '[]'::jsonb
+    ) AS data
+    FROM (
+      SELECT id, uuid, name, views
+      FROM recipe_stats
+      ORDER BY views DESC, name ASC
+      LIMIT 10
+    ) s
+  ),
+
+  recipe_likes_graph AS (
+    SELECT COALESCE(
+      jsonb_agg(
+        jsonb_build_object(
+          'id', id,
+          'uuid', uuid,
+          'name', name,
+          'value', liked_count
+        )
+        ORDER BY liked_count DESC, name ASC
+      ),
+      '[]'::jsonb
+    ) AS data
+    FROM (
+      SELECT id, uuid, name, liked_count
+      FROM recipe_stats
+      ORDER BY liked_count DESC, name ASC
+      LIMIT 10
+    ) s
+  ),
+
+  recipe_purchases_graph AS (
+    SELECT COALESCE(
+      jsonb_agg(
+        jsonb_build_object(
+          'id', id,
+          'uuid', uuid,
+          'name', name,
+          'value', purchase_count,
+          'revenue', purchase_revenue
+        )
+        ORDER BY purchase_count DESC, purchase_revenue DESC, name ASC
+      ),
+      '[]'::jsonb
+    ) AS data
+    FROM (
+      SELECT id, uuid, name, purchase_count, purchase_revenue
+      FROM recipe_stats
+      ORDER BY purchase_count DESC, purchase_revenue DESC, name ASC
+      LIMIT 10
+    ) s
+  ),
+
+  cook_views_graph AS (
+    SELECT COALESCE(
+      jsonb_agg(
+        jsonb_build_object(
+          'id', id,
+          'uuid', uuid,
+          'name', COALESCE(name, user_name, email, contact),
+          'value', total_views
+        )
+        ORDER BY total_views DESC, name ASC
+      ),
+      '[]'::jsonb
+    ) AS data
+    FROM (
+      SELECT id, uuid, name, user_name, email, contact, total_views
+      FROM cook_stats
+      ORDER BY total_views DESC, name ASC
+      LIMIT 10
+    ) s
+  ),
+
+  cook_likes_graph AS (
+    SELECT COALESCE(
+      jsonb_agg(
+        jsonb_build_object(
+          'id', id,
+          'uuid', uuid,
+          'name', COALESCE(name, user_name, email, contact),
+          'value', total_likes
+        )
+        ORDER BY total_likes DESC, name ASC
+      ),
+      '[]'::jsonb
+    ) AS data
+    FROM (
+      SELECT id, uuid, name, user_name, email, contact, total_likes
+      FROM cook_stats
+      ORDER BY total_likes DESC, name ASC
+      LIMIT 10
+    ) s
+  ),
+
+  cook_purchases_graph AS (
+    SELECT COALESCE(
+      jsonb_agg(
+        jsonb_build_object(
+          'id', id,
+          'uuid', uuid,
+          'name', COALESCE(name, user_name, email, contact),
+          'value', total_purchases,
+          'revenue', total_purchase_revenue
+        )
+        ORDER BY total_purchases DESC, total_purchase_revenue DESC, name ASC
+      ),
+      '[]'::jsonb
+    ) AS data
+    FROM (
+      SELECT id, uuid, name, user_name, email, contact, total_purchases, total_purchase_revenue
+      FROM cook_stats
+      ORDER BY total_purchases DESC, total_purchase_revenue DESC, name ASC
+      LIMIT 10
+    ) s
+  ),
+
+  most_viewed_recipe AS (
+    SELECT COALESCE(
+      (
+        SELECT jsonb_build_object(
+          'id', id,
+          'uuid', uuid,
+          'name', name,
+          'views', views,
+          'likedCount', liked_count,
+          'purchaseCount', purchase_count,
+          'purchaseRevenue', purchase_revenue,
+          'userUuid', user_uuid
+        )
+        FROM recipe_stats
+        ORDER BY views DESC, liked_count DESC, purchase_count DESC, id DESC
+        LIMIT 1
+      ),
+      '{}'::jsonb
+    ) AS data
+  ),
+
+  most_liked_recipe AS (
+    SELECT COALESCE(
+      (
+        SELECT jsonb_build_object(
+          'id', id,
+          'uuid', uuid,
+          'name', name,
+          'views', views,
+          'likedCount', liked_count,
+          'purchaseCount', purchase_count,
+          'purchaseRevenue', purchase_revenue,
+          'userUuid', user_uuid
+        )
+        FROM recipe_stats
+        ORDER BY liked_count DESC, views DESC, purchase_count DESC, id DESC
+        LIMIT 1
+      ),
+      '{}'::jsonb
+    ) AS data
+  ),
+
+  most_purchased_recipe AS (
+    SELECT COALESCE(
+      (
+        SELECT jsonb_build_object(
+          'id', id,
+          'uuid', uuid,
+          'name', name,
+          'views', views,
+          'likedCount', liked_count,
+          'purchaseCount', purchase_count,
+          'purchaseRevenue', purchase_revenue,
+          'userUuid', user_uuid
+        )
+        FROM recipe_stats
+        ORDER BY purchase_count DESC, purchase_revenue DESC, views DESC, id DESC
+        LIMIT 1
+      ),
+      '{}'::jsonb
+    ) AS data
+  ),
+
+  most_viewed_cook AS (
+    SELECT COALESCE(
+      (
+        SELECT jsonb_build_object(
+          'id', id,
+          'uuid', uuid,
+          'name', name,
+          'userName', user_name,
+          'followers', followers,
+          'recipes', recipes,
+          'totalViews', total_views,
+          'totalLikes', total_likes,
+          'totalPurchases', total_purchases,
+          'totalPurchaseRevenue', total_purchase_revenue
+        )
+        FROM cook_stats
+        ORDER BY total_views DESC, total_likes DESC, total_purchases DESC, id DESC
+        LIMIT 1
+      ),
+      '{}'::jsonb
+    ) AS data
+  ),
+
+  most_liked_cook AS (
+    SELECT COALESCE(
+      (
+        SELECT jsonb_build_object(
+          'id', id,
+          'uuid', uuid,
+          'name', name,
+          'userName', user_name,
+          'followers', followers,
+          'recipes', recipes,
+          'totalViews', total_views,
+          'totalLikes', total_likes,
+          'totalPurchases', total_purchases,
+          'totalPurchaseRevenue', total_purchase_revenue
+        )
+        FROM cook_stats
+        ORDER BY total_likes DESC, total_views DESC, total_purchases DESC, id DESC
+        LIMIT 1
+      ),
+      '{}'::jsonb
+    ) AS data
+  ),
+
+  most_purchased_cook AS (
+    SELECT COALESCE(
+      (
+        SELECT jsonb_build_object(
+          'id', id,
+          'uuid', uuid,
+          'name', name,
+          'userName', user_name,
+          'followers', followers,
+          'recipes', recipes,
+          'totalViews', total_views,
+          'totalLikes', total_likes,
+          'totalPurchases', total_purchases,
+          'totalPurchaseRevenue', total_purchase_revenue
+        )
+        FROM cook_stats
+        ORDER BY total_purchases DESC, total_purchase_revenue DESC, total_views DESC, id DESC
+        LIMIT 1
+      ),
+      '{}'::jsonb
+    ) AS data
   )
 
 SELECT jsonb_build_object(
   'status', 200,
   'message', 'Super admin dashboard loaded',
   'range', jsonb_build_object(
-    'from', (SELECT to_char((SELECT from_ts FROM range), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
-    'to',   (SELECT to_char((SELECT to_ts FROM range),   'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
-  ),
-  'users', jsonb_build_object(
-    'total', (SELECT total FROM users_agg),
-    'active', (SELECT active FROM users_agg),
-    'totalCooks', (SELECT total_cooks FROM users_agg),
-    'pendingCookApprovals', (SELECT pending_cook_approvals FROM users_agg),
-    'newInRange', (SELECT new_in_range FROM users_agg),
-    'byType', COALESCE((SELECT data FROM users_by_type), '[]'::jsonb)
+    'from', to_char((SELECT from_ts FROM range_cte), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+    'to', to_char((SELECT to_ts FROM range_cte), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
   ),
   'recipes', jsonb_build_object(
-    'total', (SELECT total FROM recipes_agg),
-    'active', (SELECT active FROM recipes_agg),
-    'newInRange', (SELECT new_in_range FROM recipes_agg),
-    'totalViews', (SELECT total_views FROM recipes_agg),
-    'wishlistCount', (SELECT wishlist_count FROM recipes_agg),
-    'bookmarkCount', (SELECT bookmark_count FROM recipes_agg),
-    'categoryDistribution', COALESCE((SELECT data FROM category_distribution), '[]'::jsonb),
-    'topRecipes', COALESCE((SELECT data FROM top_recipes), '[]'::jsonb)
+    'total', (SELECT total FROM recipes_summary),
+    'active', (SELECT active FROM recipes_summary),
+    'newInRange', (SELECT new_in_range FROM recipes_summary),
+    'totalViews', (SELECT total_views FROM engagement_summary),
+    'wishlistCount', (SELECT wishlist_count FROM engagement_summary),
+    'bookmarkCount', (SELECT bookmark_count FROM engagement_summary),
+    'totalPurchases', (SELECT total_recipe_purchases FROM engagement_summary),
+    'totalPurchaseRevenue', (SELECT total_recipe_purchase_revenue FROM engagement_summary),
+    'categoryDistribution', (SELECT data FROM category_distribution),
+    'creationTrend', (SELECT data FROM recipe_trend),
+    'topRecipes', (SELECT data FROM top_recipes)
+  ),
+  'topCooks', (SELECT data FROM top_cooks),
+  'highlights', jsonb_build_object(
+    'mostViewedRecipe', (SELECT data FROM most_viewed_recipe),
+    'mostLikedRecipe', (SELECT data FROM most_liked_recipe),
+    'mostPurchasedRecipe', (SELECT data FROM most_purchased_recipe),
+    'mostViewedCook', (SELECT data FROM most_viewed_cook),
+    'mostLikedCook', (SELECT data FROM most_liked_cook),
+    'mostPurchasedCook', (SELECT data FROM most_purchased_cook)
+  ),
+  'graphs', jsonb_build_object(
+    'recipeViews', (SELECT data FROM recipe_views_graph),
+    'recipeLikes', (SELECT data FROM recipe_likes_graph),
+    'recipePurchases', (SELECT data FROM recipe_purchases_graph),
+    'cookViews', (SELECT data FROM cook_views_graph),
+    'cookLikes', (SELECT data FROM cook_likes_graph),
+    'cookPurchases', (SELECT data FROM cook_purchases_graph)
+  ),
+  'tables', jsonb_build_object(
+    'topRecipesByPerformance', (SELECT data FROM top_recipes),
+    'topCooksByPerformance', (SELECT data FROM top_cooks),
+    'topRecipesByViews', (SELECT data FROM recipe_views_graph),
+    'topRecipesByLikes', (SELECT data FROM recipe_likes_graph),
+    'topRecipesByPurchases', (SELECT data FROM recipe_purchases_graph),
+    'topCooksByViews', (SELECT data FROM cook_views_graph),
+    'topCooksByLikes', (SELECT data FROM cook_likes_graph),
+    'topCooksByPurchases', (SELECT data FROM cook_purchases_graph)
+  ),
+  'users', jsonb_build_object(
+    'total', (SELECT total FROM users_summary),
+    'active', (SELECT active FROM users_summary),
+    'totalCooks', (SELECT total_cooks FROM users_summary),
+    'pendingCookApprovals', (SELECT pending_cook_approvals FROM users_summary),
+    'newInRange', (SELECT new_in_range FROM users_summary),
+    'byType', (SELECT data FROM user_type_distribution),
+    'signupTrend', (SELECT data FROM signup_trend)
   ),
   'revenue', jsonb_build_object(
-    'totalInRange', (SELECT total_in_range FROM revenue_agg),
-    'subscriptionInRange', (SELECT subscription_in_range FROM revenue_agg),
-    'recipeInRange', (SELECT recipe_in_range FROM revenue_agg)
+    'totalInRange', (SELECT total_in_range FROM revenue_summary),
+    'subscriptionInRange', (SELECT subscription_in_range FROM revenue_summary),
+    'recipeInRange', (SELECT recipe_in_range FROM revenue_summary),
+    'paidTransactionsInRange', (SELECT paid_transactions_in_range FROM revenue_summary),
+    'trend', (SELECT data FROM revenue_trend),
+    'activePlanDistribution', (SELECT data FROM active_plan_distribution)
   ),
   'transactions', jsonb_build_object(
-    'recent', COALESCE((SELECT data FROM recent_transactions), '[]'::jsonb)
-  ),
-  'topCooks', COALESCE((SELECT data FROM top_cooks), '[]'::jsonb)
+    'recent', (SELECT data FROM recent_transactions)
+  )
 ) AS data;
 ''';
 
@@ -1312,12 +1757,548 @@ SELECT jsonb_build_object(
       }
 
       final dynamic raw = res.first.first;
-      // postgres.dart may return Map-like JSON or a String; normalize.
       final decoded = raw is String ? jsonDecode(raw) : (raw is Map ? raw : jsonDecode(raw.toString()));
 
       return Response.ok(jsonEncode(decoded), headers: {'Content-Type': 'application/json'});
     } catch (e) {
       return Response.internalServerError(body: jsonEncode({'status': 500, 'message': 'Failed to load dashboard', 'error': e.toString()}), headers: {'Content-Type': 'application/json'});
+    }
+  }
+
+  Future<Response> getSuperAdminReport({required String reportType, Map<String, dynamic>? range}) async {
+    final String normalizedType = reportType.trim().toLowerCase();
+
+    const List<String> supportedReportTypes = [
+      'all_data',
+      'user_overview',
+      'user_growth',
+      'user_type_distribution',
+      'cook_growth',
+      'cook_approval_status',
+      'top_cooks_by_performance',
+      'top_cooks_by_views',
+      'top_cooks_by_likes',
+      'top_cooks_by_purchases',
+      'recipe_overview',
+      'recipe_growth',
+      'recipe_category_distribution',
+      'top_recipes_by_performance',
+      'top_recipes_by_views',
+      'top_recipes_by_likes',
+      'top_recipes_by_purchases',
+      'revenue_overview',
+      'revenue_trend',
+      'subscription_plan_distribution',
+      'transaction_summary',
+      'recent_transactions',
+      'engagement_summary',
+      'highlights_summary',
+    ];
+
+    if (!supportedReportTypes.contains(normalizedType)) {
+      return Response.badRequest(body: jsonEncode({'status': 400, 'message': 'Unsupported report_type', 'reportCount': supportedReportTypes.length, 'supportedReportTypes': supportedReportTypes}), headers: {'Content-Type': 'application/json'});
+    }
+
+    final Response dashboardResponse = await getSuperAdminDashboard(requestBody: range);
+    final String body = await dashboardResponse.readAsString();
+    final Map<String, dynamic> decoded = jsonDecode(body) as Map<String, dynamic>;
+
+    final Map<String, dynamic> users = ((decoded['users'] ?? {}) as Map).cast<String, dynamic>();
+    final Map<String, dynamic> recipes = ((decoded['recipes'] ?? {}) as Map).cast<String, dynamic>();
+    final Map<String, dynamic> revenue = ((decoded['revenue'] ?? {}) as Map).cast<String, dynamic>();
+    final Map<String, dynamic> transactions = ((decoded['transactions'] ?? {}) as Map).cast<String, dynamic>();
+    final Map<String, dynamic> highlights = ((decoded['highlights'] ?? {}) as Map).cast<String, dynamic>();
+    final Map<String, dynamic> graphs = ((decoded['graphs'] ?? {}) as Map).cast<String, dynamic>();
+    final Map<String, dynamic> tables = ((decoded['tables'] ?? {}) as Map).cast<String, dynamic>();
+    final dynamic rangeData = decoded['range'];
+    final dynamic topCooks = decoded['topCooks'];
+
+    final Map<String, dynamic> reportMap = {
+      'all_data': {
+        'range': rangeData,
+        'graphs': graphs,
+        'tables': tables,
+        'topCooks': topCooks,
+        'highlights': highlights,
+        'recipes': recipes,
+        'transactions': transactions,
+        'users': users,
+        'revenue': revenue,
+      },
+      'user_overview': {
+        'range': rangeData,
+        'users': {'total': users['total'], 'active': users['active'], 'totalCooks': users['totalCooks'], 'pendingCookApprovals': users['pendingCookApprovals'], 'newInRange': users['newInRange']},
+      },
+      'user_growth': {'range': rangeData, 'signupTrend': users['signupTrend'] ?? []},
+      'user_type_distribution': {'range': rangeData, 'byType': users['byType'] ?? []},
+      'cook_growth': {'range': rangeData, 'totalCooks': users['totalCooks'], 'signupTrend': users['signupTrend'] ?? []},
+      'cook_approval_status': {'range': rangeData, 'totalCooks': users['totalCooks'], 'pendingCookApprovals': users['pendingCookApprovals']},
+      'top_cooks_by_performance': {'range': rangeData, 'topCooks': tables['topCooksByPerformance'] ?? topCooks ?? []},
+      'top_cooks_by_views': {'range': rangeData, 'topCooks': tables['topCooksByViews'] ?? graphs['cookViews'] ?? []},
+      'top_cooks_by_likes': {'range': rangeData, 'topCooks': tables['topCooksByLikes'] ?? graphs['cookLikes'] ?? []},
+      'top_cooks_by_purchases': {'range': rangeData, 'topCooks': tables['topCooksByPurchases'] ?? graphs['cookPurchases'] ?? []},
+      'recipe_overview': {
+        'range': rangeData,
+        'recipes': {
+          'total': recipes['total'],
+          'active': recipes['active'],
+          'newInRange': recipes['newInRange'],
+          'totalViews': recipes['totalViews'],
+          'wishlistCount': recipes['wishlistCount'],
+          'bookmarkCount': recipes['bookmarkCount'],
+          'totalPurchases': recipes['totalPurchases'],
+          'totalPurchaseRevenue': recipes['totalPurchaseRevenue'],
+        },
+      },
+      'recipe_growth': {'range': rangeData, 'creationTrend': recipes['creationTrend'] ?? []},
+      'recipe_category_distribution': {'range': rangeData, 'categoryDistribution': recipes['categoryDistribution'] ?? []},
+      'top_recipes_by_performance': {'range': rangeData, 'topRecipes': tables['topRecipesByPerformance'] ?? recipes['topRecipes'] ?? []},
+      'top_recipes_by_views': {'range': rangeData, 'topRecipes': tables['topRecipesByViews'] ?? graphs['recipeViews'] ?? []},
+      'top_recipes_by_likes': {'range': rangeData, 'topRecipes': tables['topRecipesByLikes'] ?? graphs['recipeLikes'] ?? []},
+      'top_recipes_by_purchases': {'range': rangeData, 'topRecipes': tables['topRecipesByPurchases'] ?? graphs['recipePurchases'] ?? []},
+      'revenue_overview': {
+        'range': rangeData,
+        'revenue': {'totalInRange': revenue['totalInRange'], 'subscriptionInRange': revenue['subscriptionInRange'], 'recipeInRange': revenue['recipeInRange'], 'paidTransactionsInRange': revenue['paidTransactionsInRange']},
+      },
+      'revenue_trend': {'range': rangeData, 'trend': revenue['trend'] ?? []},
+      'subscription_plan_distribution': {'range': rangeData, 'activePlanDistribution': revenue['activePlanDistribution'] ?? []},
+      'transaction_summary': {'range': rangeData, 'paidTransactionsInRange': revenue['paidTransactionsInRange'], 'recentTransactionCount': ((transactions['recent'] ?? []) as List).length},
+      'recent_transactions': {'range': rangeData, 'recent': transactions['recent'] ?? []},
+      'engagement_summary': {
+        'range': rangeData,
+        'engagement': {'totalViews': recipes['totalViews'], 'wishlistCount': recipes['wishlistCount'], 'bookmarkCount': recipes['bookmarkCount'], 'totalPurchases': recipes['totalPurchases'], 'totalPurchaseRevenue': recipes['totalPurchaseRevenue']},
+      },
+      'highlights_summary': {'range': rangeData, 'highlights': highlights},
+    };
+
+    return Response.ok(
+      jsonEncode({'status': 200, 'message': 'Report generated successfully', 'reportType': normalizedType, 'reportCount': supportedReportTypes.length, 'supportedReportTypes': supportedReportTypes, 'data': reportMap[normalizedType]}),
+      headers: {'Content-Type': 'application/json'},
+    );
+  }
+
+  String _beautifyReportLabel(String value) {
+    final normalized = value.replaceAll(RegExp(r'(?<=[a-z0-9])(?=[A-Z])'), '_').replaceAll('-', '_').replaceAll(RegExp(r'_+'), '_').trim();
+
+    final words = normalized.split('_').map((e) => e.trim()).where((e) => e.isNotEmpty).map((e) => e.toLowerCase()).map((e) {
+      const upperWords = {'id', 'uuid', 'api', 'crm', 'pdf', 'otp', 'upi', 'gst', 'faq', 'url', 'user', 'cook'};
+      if (upperWords.contains(e)) return e.toUpperCase();
+      return e[0].toUpperCase() + e.substring(1);
+    }).toList();
+
+    return words.join(' ');
+  }
+
+  String _pdfTextValue(dynamic value) {
+    if (value == null) return '-';
+    if (DateTime.tryParse(value.toString()) != null) {
+      return DateFormat('dd/MM/yyyy hh:mm a').format(DateTime.parse(value));
+    }
+    final s = value.toString().trim();
+    return s.isEmpty ? '-' : s;
+  }
+
+  bool _shouldExcludePdfKey(String key) {
+    final normalized = key.trim().toLowerCase();
+    if (normalized.isEmpty) return false;
+
+    const exactMatches = {
+      'id',
+      'uuid',
+      'user_id',
+      'user_uuid',
+      'recipe_id',
+      'recipe_uuid',
+      'category_id',
+      'category_uuid',
+      'cook_id',
+      'cook_uuid',
+      'provider_payment_id',
+      'provider_subscription_id',
+      'is_admin_approved',
+      'is_email_verified',
+      'is_contact_verified',
+      'user_name'
+      'username',
+      'email',
+      'contact',
+    };
+
+    if (exactMatches.contains(normalized)) return true;
+
+    if (normalized.endsWith('_id') || normalized.endsWith('_uuid')) return true;
+    if (normalized == 'userid' || normalized == 'useruuid') return true;
+    if (normalized == 'recipeid' || normalized == 'recipeuuid') return true;
+    if (normalized == 'categoryid' || normalized == 'categoryuuid') return true;
+    if (normalized == 'cookid' || normalized == 'cookuuid') return true;
+    if (normalized == 'providerpaymentid' || normalized == 'providersubscriptionid') return true;
+    if (normalized == 'isadminapproved' || normalized == 'score') return true;
+    if (normalized == 'userName' || normalized == 'username') return true;
+
+    if (normalized.endsWith('id') || normalized.endsWith('uuid')) {
+      return true;
+    }
+
+    return false;
+  }
+
+  pw.Widget _pdfInfoCard(String title, String value) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(14),
+      decoration: pw.BoxDecoration(
+        color: PdfColors.white,
+        border: pw.Border.all(color: PdfColor.fromHex('#E2E8F0')),
+        borderRadius: pw.BorderRadius.circular(14),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            title,
+            style: pw.TextStyle(fontSize: 9, color: PdfColor.fromHex('#64748B'), fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 7),
+          pw.Text(
+            value,
+            style: pw.TextStyle(fontSize: 15, color: PdfColor.fromHex('#0F172A'), fontWeight: pw.FontWeight.bold),
+          ),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _pdfSectionTitle(String title) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.only(top: 10, bottom: 10),
+      child: pw.Container(
+        width: double.infinity,
+        padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: pw.BoxDecoration(
+          color: PdfColors.white,
+          borderRadius: pw.BorderRadius.circular(12),
+          border: pw.Border.all(color: PdfColor.fromHex('#E2E8F0')),
+        ),
+        child: pw.Text(
+          title,
+          style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#0F172A')),
+        ),
+      ),
+    );
+  }
+
+  pw.Widget _pdfMapAsCards(Map<String, dynamic> data) {
+    final scalarEntries = data.entries.where((e) => !_shouldExcludePdfKey(e.key.toString())).where((e) => e.value == null || (e.value is! Map && e.value is! List)).toList();
+
+    if (scalarEntries.isEmpty) {
+      return pw.SizedBox.shrink();
+    }
+
+    final rows = scalarEntries.map((entry) => [_beautifyReportLabel(entry.key.toString()), _pdfTextValue(entry.value)]).toList();
+
+    return pw.TableHelper.fromTextArray(
+      headers: const ['Field', 'Value'],
+      data: rows,
+      headerStyle: pw.TextStyle(color: PdfColors.white, fontWeight: pw.FontWeight.bold, fontSize: 9),
+      headerDecoration: pw.BoxDecoration(color: PdfColor.fromHex('#22C55E')),
+      cellStyle: pw.TextStyle(fontSize: 9, color: PdfColor.fromHex('#334155')),
+      cellPadding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+      columnWidths: {0: const pw.FlexColumnWidth(2.2), 1: const pw.FlexColumnWidth(3.8)},
+      // oddCellDecoration: pw.BoxDecoration(color: PdfColor.fromHex('#F8FAFC')),
+      border: pw.TableBorder.all(color: PdfColor.fromHex('#E2E8F0'), width: 0.7),
+    );
+  }
+
+  pw.Widget _pdfListAsTable(List<dynamic> items) {
+    if (items.isEmpty) {
+      return pw.Container(
+        padding: const pw.EdgeInsets.all(14),
+        decoration: pw.BoxDecoration(
+          color: PdfColor.fromHex('#F8FAFC'),
+          border: pw.Border.all(color: PdfColor.fromHex('#E2E8F0')),
+          borderRadius: pw.BorderRadius.circular(12),
+        ),
+        child: pw.Text('No data available', style: pw.TextStyle(fontSize: 10, color: PdfColor.fromHex('#475569'))),
+      );
+    }
+
+    final mapItems = items.whereType<Map>().toList();
+
+    if (mapItems.length != items.length) {
+      final rows = <List<String>>[];
+      for (int i = 0; i < items.length; i++) {
+        rows.add(['${i + 1}', _pdfTextValue(items[i])]);
+      }
+
+      return pw.TableHelper.fromTextArray(
+        headers: const ['#', 'Value'],
+        data: rows,
+        headerStyle: pw.TextStyle(color: PdfColors.white, fontWeight: pw.FontWeight.bold, fontSize: 9),
+        headerDecoration: pw.BoxDecoration(color: PdfColor.fromHex('#22C55E')),
+        cellStyle: pw.TextStyle(fontSize: 9, color: PdfColor.fromHex('#334155')),
+        cellPadding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+        columnWidths: {0: const pw.FlexColumnWidth(0.8), 1: const pw.FlexColumnWidth(5.2)},
+        // oddCellDecoration: pw.BoxDecoration(color: PdfColor.fromHex('#F8FAFC')),
+        border: pw.TableBorder.all(color: PdfColor.fromHex('#E2E8F0'), width: 0.7),
+      );
+    }
+
+    final headers = <String>{};
+    for (final item in mapItems) {
+      headers.addAll(item.keys.map((e) => e.toString()).where((key) => !_shouldExcludePdfKey(key)));
+    }
+
+    final headerList = headers.toList();
+    if (headerList.isEmpty) {
+      return pw.Container(
+        padding: const pw.EdgeInsets.all(14),
+        decoration: pw.BoxDecoration(
+          color: PdfColor.fromHex('#F8FAFC'),
+          border: pw.Border.all(color: PdfColor.fromHex('#E2E8F0')),
+          borderRadius: pw.BorderRadius.circular(12),
+        ),
+        child: pw.Text('No displayable data available', style: pw.TextStyle(fontSize: 10, color: PdfColor.fromHex('#475569'))),
+      );
+    }
+    final rows = mapItems.map((item) => headerList.map((key) => _pdfTextValue(item[key])).toList()).toList();
+
+    return pw.TableHelper.fromTextArray(
+      headers: headerList.map(_beautifyReportLabel).toList(),
+      data: rows,
+      headerStyle: pw.TextStyle(color: PdfColors.white, fontWeight: pw.FontWeight.bold, fontSize: 9),
+      headerDecoration: pw.BoxDecoration(color: PdfColor.fromHex('#22C55E')),
+      cellStyle: pw.TextStyle(fontSize: 8.5, color: PdfColor.fromHex('#334155')),
+      cellPadding: const pw.EdgeInsets.symmetric(horizontal: 7, vertical: 6),
+      // oddCellDecoration: pw.BoxDecoration(color: PdfColor.fromHex('#F8FAFC')),
+      border: pw.TableBorder.all(color: PdfColor.fromHex('#E2E8F0'), width: 0.7),
+    );
+  }
+
+  List<pw.Widget> _buildPdfContent(dynamic value, {String? title}) {
+    final widgets = <pw.Widget>[];
+
+    if (title != null && title.trim().isNotEmpty) {
+      widgets.add(_pdfSectionTitle(title));
+    }
+
+    if (value == null) {
+      widgets.add(
+        pw.Container(
+          padding: const pw.EdgeInsets.all(14),
+          decoration: pw.BoxDecoration(
+            color: PdfColor.fromHex('#F8FAFC'),
+            border: pw.Border.all(color: PdfColor.fromHex('#E2E8F0')),
+            borderRadius: pw.BorderRadius.circular(12),
+          ),
+          child: pw.Text('No data available', style: pw.TextStyle(fontSize: 10, color: PdfColor.fromHex('#475569'))),
+        ),
+      );
+      return widgets;
+    }
+
+    if (value is Map<String, dynamic>) {
+      final scalarMap = <String, dynamic>{};
+      final nestedEntries = <MapEntry<String, dynamic>>[];
+
+      for (final entry in value.entries) {
+        final key = entry.key.toString();
+        if (key == 'range' || _shouldExcludePdfKey(key)) {
+          continue;
+        }
+
+        if (entry.value is Map || entry.value is List) {
+          nestedEntries.add(entry);
+        } else {
+          scalarMap[entry.key] = entry.value;
+        }
+      }
+
+      if (scalarMap.isNotEmpty) {
+        widgets.add(_pdfMapAsCards(scalarMap));
+      }
+
+      for (final entry in nestedEntries) {
+        widgets.add(pw.SizedBox(height: 10));
+        widgets.addAll(_buildPdfContent(entry.value, title: _beautifyReportLabel(entry.key.toString())));
+      }
+      return widgets;
+    }
+
+    if (value is Map) {
+      return _buildPdfContent(value.cast<String, dynamic>(), title: title);
+    }
+
+    if (value is List) {
+      widgets.add(_pdfListAsTable(value));
+      return widgets;
+    }
+
+    widgets.add(
+      pw.TableHelper.fromTextArray(
+        headers: const ['Field', 'Value'],
+        data: [
+          ['Value', _pdfTextValue(value)],
+        ],
+        headerStyle: pw.TextStyle(color: PdfColors.white, fontWeight: pw.FontWeight.bold, fontSize: 9),
+        headerDecoration: pw.BoxDecoration(color: PdfColor.fromHex('#22C55E')),
+        cellStyle: pw.TextStyle(fontSize: 9, color: PdfColor.fromHex('#334155')),
+        cellPadding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+        columnWidths: {0: const pw.FlexColumnWidth(2.0), 1: const pw.FlexColumnWidth(4.0)},
+        // oddCellDecoration: pw.BoxDecoration(color: PdfColor.fromHex('#F8FAFC')),
+        border: pw.TableBorder.all(color: PdfColor.fromHex('#E2E8F0'), width: 0.7),
+      ),
+    );
+    return widgets;
+  }
+
+  Future<Uint8List> _generateReportPdfBytes({required String reportType, required Map<String, dynamic> payload}) async {
+    final pdf = pw.Document();
+    final dynamic data = payload['data'];
+    final dynamic range = payload['range'];
+    final generatedAt = DateFormat('dd/MM/yyyy hh:mm a').format(DateTime.now());
+
+    String fromText = 'Entire History';
+    String toText = '-';
+
+    if (range is Map) {
+      final from = range['from'];
+      final to = range['to'];
+      if ((from ?? '').toString().trim().isNotEmpty || (to ?? '').toString().trim().isNotEmpty) {
+        fromText = _pdfTextValue(from);
+        toText = _pdfTextValue(to);
+      }
+    }
+
+    final baseFont = pw.Font.helvetica();
+    final boldFont = pw.Font.helveticaBold();
+    final String reportLabel = _beautifyReportLabel(reportType);
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageTheme: pw.PageTheme(
+          margin: const pw.EdgeInsets.fromLTRB(26, 24, 26, 28),
+          theme: pw.ThemeData.withFont(base: baseFont, bold: boldFont),
+        ),
+        maxPages: 200,
+        build: (context) => [
+          pw.Container(
+            width: double.infinity,
+            padding: const pw.EdgeInsets.all(22),
+            decoration: pw.BoxDecoration(
+              color: PdfColors.white,
+              border: pw.Border.all(color: PdfColor.fromHex('#E2E8F0')),
+              borderRadius: pw.BorderRadius.circular(18),
+            ),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Row(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Expanded(
+                      child: pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Container(
+                            padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: pw.BoxDecoration(color: PdfColor.fromHex('#22C55E'), borderRadius: pw.BorderRadius.circular(20)),
+                            child: pw.Text(
+                              'DishConnect Admin Report',
+                              style: pw.TextStyle(color: PdfColors.white, fontSize: 9, fontWeight: pw.FontWeight.bold),
+                            ),
+                          ),
+                          pw.SizedBox(height: 14),
+                          pw.Text(
+                            reportLabel,
+                            style: pw.TextStyle(color: PdfColor.fromHex('#14532D'), fontSize: 24, fontWeight: pw.FontWeight.bold),
+                          ),
+                          pw.SizedBox(height: 6),
+                          pw.Text('Generated analytics summary for the selected report range.', style: pw.TextStyle(color: PdfColor.fromHex('#64748B'), fontSize: 10)),
+                        ],
+                      ),
+                    ),
+                    pw.SizedBox(width: 12),
+                    pw.Container(
+                      padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: pw.BoxDecoration(
+                        color: PdfColors.white,
+                        borderRadius: pw.BorderRadius.circular(14),
+                        border: pw.Border.all(color: PdfColor.fromHex('#E2E8F0')),
+                      ),
+                      child: pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.end,
+                        children: [
+                          pw.Text(
+                            'Generated At',
+                            style: pw.TextStyle(fontSize: 8, color: PdfColor.fromHex('#64748B'), fontWeight: pw.FontWeight.bold),
+                          ),
+                          pw.SizedBox(height: 4),
+                          pw.Text(
+                            generatedAt,
+                            style: pw.TextStyle(fontSize: 10, color: PdfColor.fromHex('#0F172A'), fontWeight: pw.FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                pw.SizedBox(height: 18),
+                pw.Row(
+                  children: [
+                    pw.Expanded(child: _pdfInfoCard('From', fromText)),
+                    pw.SizedBox(width: 10),
+                    pw.Expanded(child: _pdfInfoCard('To', toText)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          pw.SizedBox(height: 18),
+          ..._buildPdfContent(data),
+        ],
+        footer: (context) => pw.Container(
+          padding: const pw.EdgeInsets.only(top: 10),
+          child: pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              pw.Text('DishConnect', style: pw.TextStyle(fontSize: 9, color: PdfColor.fromHex('#64748B'))),
+              pw.Text('Page ${context.pageNumber} of ${context.pagesCount}', style: pw.TextStyle(fontSize: 9, color: PdfColor.fromHex('#64748B'))),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    return pdf.save();
+  }
+
+  Future<Response> getSuperAdminReportPdf({required String reportType, Map<String, dynamic>? range}) async {
+    try {
+      final reportResponse = await getSuperAdminReport(reportType: reportType, range: range);
+      final reportBody = await reportResponse.readAsString();
+      final Map<String, dynamic> payload = jsonDecode(reportBody) as Map<String, dynamic>;
+
+      if ((payload['status'] ?? 500) != 200) {
+        return Response(reportResponse.statusCode, body: jsonEncode(payload), headers: {'Content-Type': 'application/json'});
+      }
+
+      final normalizedPayload = {...payload, 'range': (payload['data'] is Map ? (payload['data'] as Map)['range'] : null), 'data': (payload['data'] is Map ? (payload['data'] as Map) : payload['data'])};
+
+      final pdfBytes = await _generateReportPdfBytes(reportType: reportType, payload: normalizedPayload);
+      final safeName = reportType.trim().toLowerCase().replaceAll(' ', '_');
+      return Response.ok(
+        pdfBytes,
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': 'attachment; filename="${safeName}_report.pdf"',
+          'Content-Length': pdfBytes.length.toString(),
+          'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+          'Pragma': 'no-cache',
+          'Expires': '0',
+        },
+      );
+    } catch (e) {
+      return Response.internalServerError(body: jsonEncode({'status': 500, 'message': 'Failed to generate PDF report', 'error': e.toString()}), headers: {'Content-Type': 'application/json'});
     }
   }
 }

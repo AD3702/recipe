@@ -25,11 +25,10 @@ class AppConfig {
   static const String recipeBookmark = 'recipe_bookmark';
   static const String recipeViews = 'recipe_views';
   static const String userFollowers = 'user_followers';
+  static const String userSubscriptions = 'user_subscriptions';
   static const String cookVerificationDocuments = 'cook_verification_documents';
   static const String subscriptionPlans = 'subscription_plans';
-  static const String userSubscriptions = 'user_subscriptions';
   static const String recipePricing = 'recipe_pricing';
-  static const String recipePurchases = 'recipe_purchases';
   static const String monthlyRecipeMetrics = 'monthly_recipe_metrics';
   static const String monthlySubscriptionRevenue = 'monthly_subscription_revenue';
   static const String cookMonthlyEarnings = 'cook_monthly_earnings';

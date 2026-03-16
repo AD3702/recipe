@@ -427,6 +427,7 @@ class PaymentsController {
       final res = await connection.execute(sql, parameters: {'user_id': userId});
 
       final mapped = DBFunctions.mapFromResultRow(res, userSubscriptionKeys);
+      print(mapped);
       return Response.ok(jsonEncode({'status': 200, 'count': mapped.length, 'data': mapped}), headers: {'Content-Type': 'application/json'});
     } catch (e, st) {
       print('getUserSubscriptionsList error: $e');

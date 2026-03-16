@@ -12,9 +12,11 @@ dependencies:
   dart_jsonwebtoken: ^3.2.0
   freezed: ^3.0.0-0.0.dev
   freezed_annotation: ^3.1.0
+  intl: ^0.20.2
   json_annotation: ^4.9.0
   json_serializable: ^6.10.0
   mailer: ^6.5.0
+  pdf: ^3.12.0
   postgres: ^3.5.6
   shelf: ^1.4.0
   shelf_multipart: ^2.0.1

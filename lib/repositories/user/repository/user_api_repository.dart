@@ -54,8 +54,12 @@ class UserApiRepository implements UserRepository {
           response = await userController.updateUserAdminApproval(id ?? 0, isAdminApprovedRequest ?? false);
           break;
         case BaseRepository.superAdminDashboard:
-          response = await userController.getSuperAdminDashboard();
+          response = await userController.getSuperAdminDashboard(requestBody: jsonDecode(await req.readAsString()));
           break;
+        case BaseRepository.generateReport:
+          String reportType = queryParam['reportType'] ?? '';
+          response = await userController.getSuperAdminReportPdf(reportType: reportType, range: jsonDecode(await req.readAsString()));
+          return response;
         case BaseRepository.userDocuments:
           response = await userController.uploadCookVerificationDocumentFormData(req, userId ?? 0);
           break;
