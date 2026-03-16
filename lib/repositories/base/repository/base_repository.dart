@@ -84,10 +84,10 @@ class BaseRepository {
       RequestType.GET: const <Object>[NeedLogin()],
     },
     superAdminDashboard: {
-      RequestType.GET: const <Object>[NeedLogin(adminOnly: true)],
+      RequestType.POST: const <Object>[NeedLogin(adminOnly: true)],
     },
     generateReport: {
-      RequestType.GET: const <Object>[NeedLogin(adminOnly: true)],
+      RequestType.POST: const <Object>[NeedLogin(adminOnly: true)],
     },
     toggleRecipeWishlist: {
       RequestType.PUT: const <Object>[NeedLogin()],
