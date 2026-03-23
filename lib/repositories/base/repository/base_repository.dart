@@ -89,6 +89,9 @@ class BaseRepository {
     generateReport: {
       RequestType.POST: const <Object>[NeedLogin(adminOnly: true)],
     },
+    generateReportPdf: {
+      RequestType.POST: const <Object>[NeedLogin(adminOnly: true)],
+    },
     toggleRecipeWishlist: {
       RequestType.PUT: const <Object>[NeedLogin()],
       RequestType.GET: const <Object>[NeedLogin()],
@@ -204,15 +207,7 @@ class BaseRepository {
     return Response(200, body: jsonEncode(payloadMap));
   }
 
-  String generateJwtToken({
-    required int userId,
-    required String userName,
-    required UserType userType,
-    required String uuid,
-    required String contact,
-    required DateTime createdAt,
-    required String password,
-  }) {
+  String generateJwtToken({required int userId, required String userName, required UserType userType, required String uuid, required String contact, required DateTime createdAt, required String password}) {
     final jwt = JWT({
       'userId': userId.toString().encryptBasic,
       'userType': userType.name.encryptBasic,
@@ -248,6 +243,7 @@ class BaseRepository {
   static const String cookApproval = '/user/cook_approval';
   static const String superAdminDashboard = '/user/dashboard';
   static const String generateReport = '/user/report';
+  static const String generateReportPdf = '/user/report/pdf';
   static const String userDocuments = '/user/documents';
   static const String userProfileImage = '/user/profile/image';
   static const String userDelete = '/user/delete';

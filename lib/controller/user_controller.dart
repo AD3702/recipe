@@ -1808,7 +1808,6 @@ SELECT jsonb_build_object(
     final Map<String, dynamic> revenue = ((decoded['revenue'] ?? {}) as Map).cast<String, dynamic>();
     final Map<String, dynamic> transactions = ((decoded['transactions'] ?? {}) as Map).cast<String, dynamic>();
     final Map<String, dynamic> highlights = ((decoded['highlights'] ?? {}) as Map).cast<String, dynamic>();
-    final Map<String, dynamic> graphs = ((decoded['graphs'] ?? {}) as Map).cast<String, dynamic>();
     final Map<String, dynamic> tables = ((decoded['tables'] ?? {}) as Map).cast<String, dynamic>();
     final dynamic rangeData = decoded['range'];
     final dynamic topCooks = decoded['topCooks'];
@@ -1816,8 +1815,8 @@ SELECT jsonb_build_object(
     final Map<String, dynamic> reportMap = {
       'all_data': {
         'range': rangeData,
-        'graphs': graphs,
-        'tables': tables,
+        ...tables,
+        // 'tables': tables,
         'topCooks': topCooks,
         'highlights': highlights,
         'recipes': recipes,
@@ -1834,9 +1833,9 @@ SELECT jsonb_build_object(
       'cook_growth': {'range': rangeData, 'totalCooks': users['totalCooks'], 'signupTrend': users['signupTrend'] ?? []},
       'cook_approval_status': {'range': rangeData, 'totalCooks': users['totalCooks'], 'pendingCookApprovals': users['pendingCookApprovals']},
       'top_cooks_by_performance': {'range': rangeData, 'topCooks': tables['topCooksByPerformance'] ?? topCooks ?? []},
-      'top_cooks_by_views': {'range': rangeData, 'topCooks': tables['topCooksByViews'] ?? graphs['cookViews'] ?? []},
-      'top_cooks_by_likes': {'range': rangeData, 'topCooks': tables['topCooksByLikes'] ?? graphs['cookLikes'] ?? []},
-      'top_cooks_by_purchases': {'range': rangeData, 'topCooks': tables['topCooksByPurchases'] ?? graphs['cookPurchases'] ?? []},
+      'top_cooks_by_views': {'range': rangeData, 'topCooks': tables['topCooksByViews'] ?? []},
+      'top_cooks_by_likes': {'range': rangeData, 'topCooks': tables['topCooksByLikes'] ?? []},
+      'top_cooks_by_purchases': {'range': rangeData, 'topCooks': tables['topCooksByPurchases'] ?? []},
       'recipe_overview': {
         'range': rangeData,
         'recipes': {
@@ -1853,9 +1852,9 @@ SELECT jsonb_build_object(
       'recipe_growth': {'range': rangeData, 'creationTrend': recipes['creationTrend'] ?? []},
       'recipe_category_distribution': {'range': rangeData, 'categoryDistribution': recipes['categoryDistribution'] ?? []},
       'top_recipes_by_performance': {'range': rangeData, 'topRecipes': tables['topRecipesByPerformance'] ?? recipes['topRecipes'] ?? []},
-      'top_recipes_by_views': {'range': rangeData, 'topRecipes': tables['topRecipesByViews'] ?? graphs['recipeViews'] ?? []},
-      'top_recipes_by_likes': {'range': rangeData, 'topRecipes': tables['topRecipesByLikes'] ?? graphs['recipeLikes'] ?? []},
-      'top_recipes_by_purchases': {'range': rangeData, 'topRecipes': tables['topRecipesByPurchases'] ?? graphs['recipePurchases'] ?? []},
+      'top_recipes_by_views': {'range': rangeData, 'topRecipes': tables['topRecipesByViews'] ?? []},
+      'top_recipes_by_likes': {'range': rangeData, 'topRecipes': tables['topRecipesByLikes'] ?? []},
+      'top_recipes_by_purchases': {'range': rangeData, 'topRecipes': tables['topRecipesByPurchases'] ?? []},
       'revenue_overview': {
         'range': rangeData,
         'revenue': {'totalInRange': revenue['totalInRange'], 'subscriptionInRange': revenue['subscriptionInRange'], 'recipeInRange': revenue['recipeInRange'], 'paidTransactionsInRange': revenue['paidTransactionsInRange']},
@@ -1872,7 +1871,7 @@ SELECT jsonb_build_object(
     };
 
     return Response.ok(
-      jsonEncode({'status': 200, 'message': 'Report generated successfully', 'reportType': normalizedType, 'reportCount': supportedReportTypes.length, 'supportedReportTypes': supportedReportTypes, 'data': reportMap[normalizedType]}),
+      jsonEncode({'status': 200, 'message': 'Report generated successfully', 'reportType': normalizedType, 'reportCount': supportedReportTypes.length, 'data': reportMap[normalizedType]}),
       headers: {'Content-Type': 'application/json'},
     );
   }
@@ -1919,7 +1918,7 @@ SELECT jsonb_build_object(
       'is_email_verified',
       'is_contact_verified',
       'user_name'
-      'username',
+          'username',
       'email',
       'contact',
     };

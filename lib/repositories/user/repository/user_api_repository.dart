@@ -58,6 +58,9 @@ class UserApiRepository implements UserRepository {
           break;
         case BaseRepository.generateReport:
           String reportType = queryParam['reportType'] ?? '';
+          response = await userController.getSuperAdminReport(reportType: reportType, range: jsonDecode(await req.readAsString()));
+        case BaseRepository.generateReportPdf:
+          String reportType = queryParam['reportType'] ?? '';
           response = await userController.getSuperAdminReportPdf(reportType: reportType, range: jsonDecode(await req.readAsString()));
           return response;
         case BaseRepository.userDocuments:
