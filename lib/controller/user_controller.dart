@@ -18,6 +18,7 @@ import 'package:recipe/utils/db_functions.dart';
 import 'package:recipe/utils/string_extension.dart';
 import 'package:shelf/shelf.dart';
 import 'package:uuid/uuid.dart';
+import 'dart:io';
 
 class UserController {
   late Connection connection;
@@ -2151,6 +2152,7 @@ SELECT jsonb_build_object(
 
   Future<Uint8List> _generateReportPdfBytes({required String reportType, required Map<String, dynamic> payload}) async {
     final pdf = pw.Document();
+    final svgLogo = File('assets/svg/svg_company_logo.svg').readAsStringSync();
     final dynamic data = payload['data'];
     final dynamic range = payload['range'];
     final generatedAt = DateFormat('dd/MM/yyyy hh:mm a').format(DateTime.now());
@@ -2198,21 +2200,40 @@ SELECT jsonb_build_object(
                       child: pw.Column(
                         crossAxisAlignment: pw.CrossAxisAlignment.start,
                         children: [
+                          pw.SvgImage(svg: svgLogo, height: 40),
+                          pw.SizedBox(height: 10),
                           pw.Container(
                             padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            decoration: pw.BoxDecoration(color: PdfColor.fromHex('#22C55E'), borderRadius: pw.BorderRadius.circular(20)),
+                            decoration: pw.BoxDecoration(
+                              color: PdfColor.fromHex('#22C55E'),
+                              borderRadius: pw.BorderRadius.circular(20),
+                            ),
                             child: pw.Text(
                               'DishConnect Admin Report',
-                              style: pw.TextStyle(color: PdfColors.white, fontSize: 9, fontWeight: pw.FontWeight.bold),
+                              style: pw.TextStyle(
+                                color: PdfColors.white,
+                                fontSize: 9,
+                                fontWeight: pw.FontWeight.bold,
+                              ),
                             ),
                           ),
                           pw.SizedBox(height: 14),
                           pw.Text(
                             reportLabel,
-                            style: pw.TextStyle(color: PdfColor.fromHex('#14532D'), fontSize: 24, fontWeight: pw.FontWeight.bold),
+                            style: pw.TextStyle(
+                              color: PdfColor.fromHex('#14532D'),
+                              fontSize: 24,
+                              fontWeight: pw.FontWeight.bold,
+                            ),
                           ),
                           pw.SizedBox(height: 6),
-                          pw.Text('Generated analytics summary for the selected report range.', style: pw.TextStyle(color: PdfColor.fromHex('#64748B'), fontSize: 10)),
+                          pw.Text(
+                            'Generated analytics summary for the selected report range.',
+                            style: pw.TextStyle(
+                              color: PdfColor.fromHex('#64748B'),
+                              fontSize: 10,
+                            ),
+                          ),
                         ],
                       ),
                     ),

@@ -219,14 +219,14 @@ class AuthController {
       userEntity = await getUserFromEmail(requestData['email']);
       if (userEntity == null) {
         response['message'] = 'User with email ${requestData['email']} does not exist.';
-        return Response.badRequest(body: jsonEncode(response));
+        return Response.ok(jsonEncode(response));
       }
     }
     if (requestData['contact'] != null) {
       userEntity = await getUserFromContact(requestData['contact']);
       if (userEntity == null) {
         response['message'] = 'User with contact ${requestData['contact']} does not exist.';
-        return Response.badRequest(body: jsonEncode(response));
+        return Response.ok(jsonEncode(response));
       }
     }
     // fetch any existing OTP
@@ -250,28 +250,28 @@ class AuthController {
       userEntity = await getUserFromEmail(requestData['email']);
       if (userEntity == null) {
         response['message'] = 'User with email ${requestData['email']} does not exist.';
-        return (Response.badRequest(body: jsonEncode(response)), null);
+        return (Response.ok(jsonEncode(response)), null);
       }
     }
     if (requestData['contact'] != null) {
       userEntity = await getUserFromContact(requestData['contact']);
       if (userEntity == null) {
         response['message'] = 'User with contact ${requestData['contact']} does not exist.';
-        return (Response.badRequest(body: jsonEncode(response)), null);
+        return (Response.ok(jsonEncode(response)), null);
       }
     }
     final existingOtp = await getOldGeneratedOtp(userEntity!.id);
     if (existingOtp == null) {
       response['message'] = 'No OTP has been generated for this user.';
-      return (Response.badRequest(body: jsonEncode(response)), null);
+      return (Response.ok(jsonEncode(response)), null);
     }
     if (existingOtp.otp != requestData['otp']) {
       response['message'] = 'The OTP you entered is incorrect. Please try again.';
-      return (Response.badRequest(body: jsonEncode(response)), null);
+      return (Response.ok(jsonEncode(response)), null);
     }
     if (existingOtp.createdAt.difference(DateTime.now()).inSeconds.abs() > 60) {
       response['message'] = 'The OTP you entered is expired. Please generate again.';
-      return (Response.badRequest(body: jsonEncode(response)), null);
+      return (Response.ok(jsonEncode(response)), null);
     }
     await connection.execute(
       Sql.named('UPDATE ${AppConfig.userDetails} SET ${isEmailUpdate ? 'is_email_verified' : 'is_contact_verified'} = @${isEmailUpdate ? 'is_email_verified' : 'is_contact_verified'} WHERE id = @id'),
@@ -288,7 +288,7 @@ class AuthController {
     Map<String, dynamic> response = {'status': 400};
     if (requestData['password'] == null) {
       response['message'] = 'Password is required';
-      return Response.badRequest(body: jsonEncode(response));
+      return Response.ok(jsonEncode(response));
     }
     var verifyResponse = await verifyOtp(request);
     if (verifyResponse.$1.statusCode != 200) {
